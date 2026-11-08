@@ -1068,6 +1068,11 @@
     try { await refreshBase(); } catch { return; }
     render();
   }
+  // iPhone ігнорує user-scalable=no, тому блокуємо масштабування жестами вручну
+  document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("touchmove", (e) => { if (e.scale !== undefined && e.scale !== 1) e.preventDefault(); }, { passive: false });
+  // подвійний дотик вимкнено через touch-action: manipulation (CSS) — швидкі натискання кнопок не губляться
   if ("serviceWorker" in navigator && location.protocol === "https:" && !DEMO) navigator.serviceWorker.register("sw.js").catch(() => {});
   if (location.hash === "#admin") showAdmin();
   else if (DEMO || (token && !/reset=/.test(location.hash))) start(); else showLogin();

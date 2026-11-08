@@ -319,8 +319,13 @@ button { cursor: pointer; }
 /* iPhone: шрифт полів ≥16px — інакше Safari збільшує сторінку при натисканні і не повертає масштаб */
 input, select, textarea { font-size: 16px; }
 /* поля дати й часу на iOS не повинні вилазити за свою клітинку */
-input[type="date"], input[type="time"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; display: block; }
-input::-webkit-date-and-time-value { text-align: left; margin: 0; }
+input[type="date"], input[type="time"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; display: block; line-height: 46px; padding-top: 0 !important; padding-bottom: 0 !important; }
+/* iOS: текст дати й часу — по центру по висоті, ліворуч, як в інших полях */
+input::-webkit-date-and-time-value { text-align: left; margin: 0; line-height: 46px; min-height: 46px; display: block; }
+input[type="date"]::-webkit-datetime-edit, input[type="time"]::-webkit-datetime-edit { line-height: 46px; padding: 0; }
+.part-r input[type="date"], .part-r input[type="time"] { line-height: 40px; }
+/* без масштабування жестами й подвійним дотиком */
+html, body { touch-action: manipulation; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 .field, .row2 > *, .row3 > * { min-width: 0; }
 /* страховка: сторінка ніколи не ширша за екран */
 html, body { overflow-x: hidden; max-width: 100%; }

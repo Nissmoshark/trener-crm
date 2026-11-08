@@ -34,7 +34,7 @@ export default async ({ req, res, log, error }) => {
   if (req.query?.tg !== undefined) {
     const s = await core.settings();
     if (req.headers["x-telegram-bot-api-secret-token"] !== s.secret) return res.text("forbidden", 403);
-    try { await core.onUpdate(JSON.parse(req.bodyText || "{}")); } catch (e) { error("bot: " + (e?.stack || e)); }
+    try { await core.onUpdate(JSON.parse(req.bodyText || "{}")); } catch (e) { await core.logError("bot", e); }
     return res.text("ok");
   }
   if (req.method !== "POST") return res.json({ ok: true, service: "trainer" }, 200, CORS);

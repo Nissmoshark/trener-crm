@@ -636,6 +636,7 @@
     changePin() {
       openSheet(`<h2>Мій вхід<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
         <label class="field"><span>Номер телефону${st.settings.phone_hint ? " (зараз " + esc(st.settings.phone_hint) + ")" : ""}</span><input id="pin-phone" type="tel" autocomplete="tel" placeholder="Залиште порожнім, щоб не змінювати"></label>
+        <label class="field"><span>Номер Telegram — якщо відрізняється${st.settings.tg_phone_hint ? " (зараз " + esc(st.settings.tg_phone_hint) + ")" : ""}</span><input id="pin-tg" type="tel" placeholder="${st.settings.tg_phone_hint ? "Залиште порожнім або «-», щоб прибрати" : "Номер, на який зареєстровано ваш Telegram"}"></label>
         <label class="field"><span>Новий пароль</span><input id="pin-new" type="password" autocomplete="new-password" placeholder="Від 8 символів, літери й цифри"></label>
         <label class="field"><span>Поточний пароль — для підтвердження</span><input id="pin-old" type="password" autocomplete="current-password"></label>
         <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Після зміни інші пристрої вийдуть із системи. Якщо зміните номер — Telegram треба буде підключити заново.</p>
@@ -643,7 +644,7 @@
     },
     async doChangePin() {
       if (DEMO) { closeSheet(); toast("У демо вхід не потрібен"); return; }
-      const j = await must("credentials_save", { old: $("#pin-old").value, new: $("#pin-new").value, phone: $("#pin-phone").value.trim() });
+      const j = await must("credentials_save", { old: $("#pin-old").value, new: $("#pin-new").value, phone: $("#pin-phone").value.trim(), tg_phone: $("#pin-tg").value.trim() });
       token = j.token; localStorage.setItem("trainer-token", token); closeSheet(); toast("Збережено"); await refreshBase(); render();
     },
     async exportCsv() {

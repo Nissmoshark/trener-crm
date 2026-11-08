@@ -208,7 +208,7 @@ export function createCore(st, opts = {}) {
         settings: {
           remind_before_min: +(s.remind_before_min || 0), digest_morning: s.digest_morning || "", digest_evening: s.digest_evening || "",
           trainer_name: s.trainer_name || "", bot_username: s.bot_username || "", tg_linked: !!s.trainer_chat_id,
-          phone_hint: maskPhone(s.trainer_phone), bot_ready: !!s.bot_token, bot_managed: !!opts.botToken,
+          phone_hint: maskPhone(s.trainer_phone), tg_phone_hint: maskPhone(s.trainer_tg_phone), bot_ready: !!s.bot_token, bot_managed: !!opts.botToken,
         },
       };
     },
@@ -365,6 +365,13 @@ export function createCore(st, opts = {}) {
         const ph = normPhone(b.phone);
         if (!ph) throw new ApiError("Невірний номер телефону");
         if (ph !== s.trainer_phone) { await kvSet("trainer_phone", ph); await kvSet("trainer_chat_id", ""); }
+      }
+      // окремий номер Telegram (якщо Telegram зареєстровано на інший номер); "-" — прибрати
+      if (b.tg_phone === "-") await kvSet("trainer_tg_phone", "");
+      else if (b.tg_phone != null && b.tg_phone !== "") {
+        const tp = normPhone(b.tg_phone);
+        if (!tp) throw new ApiError("Невірний номер Telegram");
+        if (tp !== s.trainer_tg_phone) { await kvSet("trainer_tg_phone", tp); }
       }
       if (b.new) {
         const p = checkPassword(b.new);
@@ -553,7 +560,10 @@ export function createCore(st, opts = {}) {
       if (kind === "t") {
         const fresh = s.trainer_code && code === s.trainer_code && nowMs() - Number(s.trainer_code_at || 0) < 30 * 60000;
         if (!fresh) return send(chat, "Посилання застаріло — створіть нове в додатку.", { reply_markup: NO_KB });
-        if (phone !== s.trainer_phone) { await throttleFail(lt); return send(chat, "❌ Цей номер не збігається з номером тренера в додатку.", { reply_markup: NO_KB }); }
+        if (phone !== s.trainer_phone && !(s.trainer_tg_phone && phone === s.trainer_tg_phone)) {
+          await throttleFail(lt);
+          return send(chat, `❌ Номер не збігається.\n\nУ вашому Telegram: <b>${maskPhone(phone) || "невідомий"}</b>\nУ журналі: <b>${maskPhone(s.trainer_phone)}</b>\n\nЯкщо Telegram на іншому номері — у додатку відкрийте «Налаштування» → «Мій вхід», вкажіть його в полі «Номер Telegram», і отримайте нове посилання.`, { reply_markup: NO_KB });
+        }
         await kvSet("trainer_chat_id", String(chat));
         await kvSet("trainer_code", "");
         return send(chat, "✅ Бот підключено до вашого журналу.\n\nЩоранку надсилатиму план дня, увечері — підсумок.\nКоманди: /today /tomorrow /week /debts", { reply_markup: NO_KB });
@@ -561,7 +571,7 @@ export function createCore(st, opts = {}) {
       if (kind === "c") {
         const [c] = await all("clients", [["tg_code", "eq", code]]);
         if (!c) return send(chat, "Посилання недійсне — попросіть тренера надіслати нове.", { reply_markup: NO_KB });
-        if (!normPhone(c.phone) || normPhone(c.phone) !== phone) { await throttleFail(lt); return send(chat, "❌ Цей номер не збігається з номером, який вказав тренер.", { reply_markup: NO_KB }); }
+        if (!normPhone(c.phone) || normPhone(c.phone) !== phone) { await throttleFail(lt); return send(chat, `❌ Номер вашого Telegram (<b>${maskPhone(phone) || "невідомий"}</b>) не збігається з номером, який вказав тренер. Попросіть тренера виправити ваш номер у журналі й надіслати нове посилання.`, { reply_markup: NO_KB }); }
         await st.update("clients", c.id, { tg_chat_id: String(chat) });
         if (s.trainer_chat_id) await send(s.trainer_chat_id, `🔔 ${esc(c.name)} підключив(ла) нагадування про тренування`);
         const coach = s.trainer_name ? ` від тренера ${esc(s.trainer_name)}` : "";

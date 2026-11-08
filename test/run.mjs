@@ -153,6 +153,22 @@ assert.equal((await ok("bootstrap", {}, tok)).settings.tg_linked, false);
 await msg(555, { text: "/start " + code });
 await msg(555, { contact: { phone_number: "+380501234567", user_id: 1 } });
 assert.match(sent.at(-1).text, /саме свій номер/);
+// повідомлення показує обидва номери (замасковані)
+await msg(777, { text: "/start " + code });
+await msg(777, { contact: { phone_number: "+380991112233", user_id: 777 } });
+assert.match(sent.at(-1).text, /22 33[\s\S]*45 67/);
+// окремий номер Telegram
+await ok("credentials_save", { old: "Trener2026", tg_phone: "099 111 22 33" }, tok).then((j) => { tok = j.token; });
+await bad("credentials_save", { old: "Trener2026", tg_phone: "12" }, tok, /Telegram/);
+const code2 = (await ok("tg_link_trainer", {}, tok)).url.split("start=")[1];
+await msg(777, { text: "/start " + code2 });
+await msg(777, { contact: { phone_number: "+380991112233", user_id: 777 } });
+assert.match(sent.at(-1).text, /Бот підключено/);
+assert.match((await ok("bootstrap", {}, tok)).settings.tg_phone_hint, /22 33/);
+await ok("credentials_save", { old: "Trener2026", tg_phone: "-" }, tok).then((j) => { tok = j.token; });
+assert.equal((await ok("bootstrap", {}, tok)).settings.tg_phone_hint, "");
+const code3 = (await ok("tg_link_trainer", {}, tok)).url.split("start=")[1];
+await msg(555, { text: "/start " + code3 });
 // правильний
 await msg(555, { contact: { phone_number: "+380501234567", user_id: 555 } });
 assert.match(sent.at(-1).text, /Бот підключено/);

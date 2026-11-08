@@ -206,10 +206,27 @@ await msg(900, { contact: { phone_number: "380671112233", user_id: 900 } });
 sent.length = 0;
 const L0 = core.local();
 await ok("session_save", { session: { day: L0.day, start_time: "09:30" }, participants: [{ client_id: ira.id, price: 350, pay: "paid" }] }, tok);
+// ── Особисті плани ──
+await bad("plan_save", { plan: { day: L0.day, title: "" } }, tok, /Напишіть/);
+await bad("plan_save", { plan: { day: "x", title: "Перукар" } }, tok, /дату/);
+const pl = (await ok("plan_save", { plan: { day: L0.day, time: "9:45", title: "Перукар", place: "вул. Хрещатик 1", cat: "beauty", remind_min: 120 } }, tok)).plan;
+assert.equal(pl.time, "09:45");
+await ok("plan_save", { plan: { day: L0.day, title: "Купити протеїн", cat: "errand" } }, tok);
+let pr = await ok("plans_range", { from: L0.day, to: L0.day }, tok);
+assert.deepEqual(pr.plans.map((x) => x.title), ["Купити протеїн", "Перукар"]);
+assert.equal((await ok("range", { from: L0.day, to: L0.day }, tok)).plans.length, 2);
+await ok("plan_done", { id: pr.plans[0].id, done: true }, tok);
 let t = await core.tick();
+assert.ok(t.includes(`plan ${pl.id}`), "plan remind " + t);
 assert.ok(t.some((x) => x.startsWith("remind")), "remind " + t);
 assert.ok(t.includes("morning") || L0.hm < "08:00");
 assert.ok(sent.some((x) => x.chat_id === 900 && /Нагадування/.test(x.text)));
+assert.ok(sent.some((x) => x.chat_id === 555 && /Перукар[\s\S]*Хрещатик/.test(x.text)));
+assert.ok(sent.some((x) => /Особисті плани[\s\S]*Перукар/.test(x.text) && !/протеїн/.test(x.text)), "morning digest has plans");
+await ok("plan_save", { plan: { id: pl.id, day: L0.day, time: "10:15", title: "Перукар", remind_min: 120 } }, tok);
+assert.equal((await ok("plans_range", { from: L0.day, to: L0.day }, tok)).plans.find((x) => x.id === pl.id).reminded, false);
+await ok("plan_delete", { id: pl.id }, tok);
+assert.equal((await ok("plans_range", { from: L0.day, to: L0.day }, tok)).plans.length, 1);
 t = await core.tick();
 assert.ok(!t.some((x) => x.startsWith("remind")), "no double remind");
 clock += 14 * 3600000; // ввечері

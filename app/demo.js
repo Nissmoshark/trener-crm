@@ -49,11 +49,17 @@
       S(-7 * w + 4, "19:00", [[dasha, 400]]); S(-7 * w + 5, "12:00", [[masha, 400]]);
       if (w === 2) S(-7 * w + 2, "16:00", [[alla, 400]], { status: "cancelled" });
     }
+    db.plans = [
+      { id: id(), day: today(), time: "13:00", duration_min: 60, title: "Перукар", place: "Салон на Липках", note: null, cat: "beauty", remind_min: 60, reminded: false, done: false },
+      { id: id(), day: today(), time: null, duration_min: 0, title: "Купити протеїн і резинки", place: null, note: null, cat: "errand", remind_min: 0, reminded: false, done: false },
+      { id: id(), day: addDays(today(), 2), time: "08:30", duration_min: 30, title: "Стоматолог", place: null, note: "Взяти виписку", cat: "health", remind_min: 120, reminded: false, done: false },
+    ];
     return db;
   }
 
   const load = () => { try { const j = localStorage.getItem(KEY); if (j) return JSON.parse(j); } catch {} return seed(); };
   let db = load();
+  db.plans ||= [];
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch {} };
   const nid = () => db.seq++;
   const fail = (m) => { throw Object.assign(new Error(m), { api: true }); };
@@ -83,7 +89,17 @@
         settings: { ...db.settings, bot_username: "", tg_linked: false, bot_ready: false, phone_hint: "" },
       };
     },
-    range: (b) => ({ sessions: db.sessions.filter((s) => s.day >= b.from && s.day <= b.to).sort((a, c) => (a.day + a.start_time).localeCompare(c.day + c.start_time)).map(fullSession) }),
+    plans_range: (b) => ({ plans: db.plans.filter((p) => p.day >= b.from && p.day <= b.to).sort((a, c) => (a.day + (a.time || "")).localeCompare(c.day + (c.time || ""))) }),
+    plan_save(b) {
+      const p = b.plan || {}; const title = String(p.title || "").trim(); if (!title) fail("Напишіть, що заплановано");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(p.day || "")) fail("Вкажіть дату");
+      const vals = { day: p.day, time: p.time ? p.time.padStart(5, "0") : null, duration_min: p.time ? Number(p.duration_min) || 0 : 0, title, place: p.place || null, note: p.note || null, cat: p.cat || "personal", remind_min: p.time ? Number(p.remind_min) || 0 : 0 };
+      let row; if (p.id) { row = db.plans.find((x) => x.id === p.id); Object.assign(row, vals, { reminded: false }); } else { row = { id: nid(), ...vals, reminded: false, done: false }; db.plans.push(row); }
+      return { plan: row };
+    },
+    plan_done(b) { const p = db.plans.find((x) => x.id === b.id); if (p) p.done = !!b.done; return {}; },
+    plan_delete(b) { db.plans = db.plans.filter((p) => p.id !== b.id); return {}; },
+    range: (b) => ({ plans: db.plans.filter((p) => p.day >= b.from && p.day <= b.to), sessions: db.sessions.filter((s) => s.day >= b.from && s.day <= b.to).sort((a, c) => (a.day + a.start_time).localeCompare(c.day + c.start_time)).map(fullSession) }),
     client_save(b) {
       const c = b.client || {}; const name = String(c.name || "").trim(); if (!name) fail("Вкажіть ім'я клієнта");
       const vals = { name, phone: c.phone ? String(c.phone).trim() : null, price: c.price === "" || c.price == null ? null : Number(c.price), notes: c.notes || null, remind: c.remind !== false };

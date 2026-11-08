@@ -31,6 +31,7 @@
     more: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>',
     search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
     phone: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 01-2.2 2 19.8 19.8 0 01-8.6-3.1 19.5 19.5 0 01-6-6A19.8 19.8 0 012.1 4.2 2 2 0 014.1 2h3a2 2 0 012 1.7c.1 1 .4 1.9.7 2.8a2 2 0 01-.5 2.1L8.1 9.9a16 16 0 006 6l1.3-1.3a2 2 0 012.1-.4c.9.3 1.8.6 2.8.7a2 2 0 011.7 2z"/></svg>',
+    plan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3.5" width="16" height="18" rx="3"/><path d="M8.5 9.5l1.5 1.5 3-3M8.5 15.5h7"/></svg>',
     close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   };
 
@@ -53,7 +54,7 @@
   }
 
   // ───── Стан ─────
-  const st = { tab: "schedule", mode: "day", date: today(), clients: [], packages: [], settings: {}, q: "", statsPeriod: "month", statsDate: today(), clientId: null };
+  const st = { planDate: today(), tab: "schedule", mode: "day", date: today(), clients: [], packages: [], settings: {}, q: "", statsPeriod: "month", statsDate: today(), clientId: null };
   const clientById = (id) => st.clients.find((c) => c.id === id);
   const sessTotal = (s) => (s.status === "cancelled" ? 0 : s.participants.reduce((a, p) => a + Number(p.price), 0) + Number(s.extra_amount || 0));
   const sessWho = (s) => s.kind === "group"
@@ -79,7 +80,7 @@
       <div class="app">${inner}</div>
       ${opts.fab ? `<button class="fab" data-act="${opts.fab.act}">${ICON.plus}${esc(opts.fab.label)}</button>` : ""}
       <nav class="nav" aria-label="Розділи"><div class="nav-in">
-        ${[["schedule", "Розклад", ICON.cal], ["clients", "Клієнти", ICON.people], ["stats", "Статистика", ICON.chart], ["more", "Ще", ICON.more]]
+        ${[["schedule", "Розклад", ICON.cal], ["plans", "Плани", ICON.plan], ["clients", "Клієнти", ICON.people], ["stats", "Статистика", ICON.chart], ["more", "Ще", ICON.more]]
           .map(([k, l, i]) => `<button data-tab="${k}" ${st.tab === k ? 'aria-current="page"' : ""}>${i}${l}</button>`).join("")}
       </div></nav>`;
   }
@@ -126,7 +127,7 @@
     const box = $("#sched");
     if (!box) return;
     const ss = j.sessions;
-    if (st.mode === "day") box.innerHTML = dayView(ss);
+    if (st.mode === "day") box.innerHTML = dayView(ss) + dayPlansStrip(j.plans || []);
     else if (st.mode === "week") box.innerHTML = weekView(ss);
     else box.innerHTML = monthView(ss);
   }
@@ -187,6 +188,74 @@
       </button>`;
     }
     return html + "</div></div>";
+  }
+
+  // ───── Плани (особисті справи) ─────
+  const CATS = { personal: ["Особисте", "🙂"], beauty: ["Краса", "💇"], health: ["Здоровʼя", "🩺"], errand: ["Справи", "🛒"], work: ["Робота", "💼"] };
+  const REMIND = [[0, "без нагадування"], [15, "за 15 хв"], [30, "за 30 хв"], [60, "за 1 год"], [120, "за 2 год"], [1440, "за добу"]];
+  const endMin = (t, d) => +t.slice(0, 2) * 60 + +t.slice(3, 5) + (Number(d) || 0);
+  const minT = (t) => +t.slice(0, 2) * 60 + +t.slice(3, 5);
+  function clashes(p, ss) {
+    if (!p.time) return [];
+    const a = minT(p.time), b = endMin(p.time, p.duration_min || 1);
+    return ss.filter((s) => s.status !== "cancelled" && minT(s.start_time) < b && endMin(s.start_time, s.duration_min) > a);
+  }
+  function planRow(p, ss) {
+    const c = CATS[p.cat] || CATS.personal, cl = clashes(p, ss);
+    return `<div class="plan ${p.done ? "done" : ""}">
+      <button class="chk" data-act="planDone" data-id="${p.id}" data-done="${p.done ? 0 : 1}" aria-label="${p.done ? "Позначити як не виконане" : "Виконано"}" aria-pressed="${p.done}">${p.done ? "✓" : ""}</button>
+      <button class="pbody" data-act="editPlan" data-id="${p.id}">
+        <span class="pt">${p.time ? `<b>${p.time}</b>${p.duration_min ? `<small>–${pad(Math.floor(endMin(p.time, p.duration_min) / 60) % 24)}:${pad(endMin(p.time, p.duration_min) % 60)}</small>` : ""}` : "<small>день</small>"}</span>
+        <span class="pw"><span class="pn">${c[1]} ${esc(p.title)}</span>${p.place || p.note || p.remind_min || cl.length ? `<span class="ps">${[p.place ? "📍 " + esc(p.place) : "", p.remind_min ? "🔔 " + (REMIND.find((r) => r[0] === p.remind_min) || [0, p.remind_min + " хв"])[1] : "", p.note ? esc(p.note) : ""].filter(Boolean).join(" · ")}${cl.length ? `<span class="clash">⚠️ перетин із тренуванням ${cl.map((s) => s.start_time).join(", ")}</span>` : ""}</span>` : ""}</span>
+      </button></div>`;
+  }
+  function dayPlansStrip(ps) {
+    if (!ps.length) return "";
+    return `<div class="card plans-mini"><h3>Мої плани</h3>${ps.map((p) => `<button class="pm ${p.done ? "done" : ""}" data-act="editPlan" data-id="${p.id}"><b>${p.time || "день"}</b><span>${(CATS[p.cat] || CATS.personal)[1]} ${esc(p.title)}</span></button>`).join("")}</div>`;
+  }
+  async function renderPlans() {
+    const d = st.planDate, rel = d === today() ? "Сьогодні" : d === addDays(today(), 1) ? "Завтра" : d === addDays(today(), -1) ? "Вчора" : null;
+    shell(`<header class="top">
+        <div class="top-row"><h1 class="title">Плани</h1><button class="chip-btn" data-act="planToday">Сьогодні</button></div>
+        <div class="datebar">
+          <button class="icon-btn" data-act="planShift" data-n="-1" aria-label="Попередній день">${ICON.left}</button>
+          <div class="label">${rel ?? dLong(d)}<small>${rel ? dLong(d) + ", " : ""}${WDL[D(d).getDay()]}</small></div>
+          <button class="icon-btn" data-act="planShift" data-n="1" aria-label="Наступний день">${ICON.right}</button>
+        </div>
+      </header><div id="pbox"><div class="loading">Завантаження…</div></div>`, { fab: { act: "newPlan", label: "План" } });
+    const to = addDays(d, 7);
+    const j = await must("range", { from: d, to });
+    const box = $("#pbox"); if (!box) return;
+    st.plans = j.plans || [];
+    const dayS = j.sessions.filter((s) => s.day === d), dayP = st.plans.filter((p) => p.day === d);
+    const busy = dayS.filter((s) => s.status !== "cancelled");
+    const agenda = [...dayP.filter((p) => p.time).map((p) => ({ t: p.time, h: planRow(p, busy) })),
+      ...busy.map((s) => ({ t: s.start_time, h: `<button class="plan-sess" data-act="planOpenDay" data-day="${d}"><span class="pt"><b>${s.start_time}</b><small>${s.duration_min} хв</small></span><span class="pw"><span class="pn">💪 ${esc(sessWho(s))}</span><span class="ps">тренування</span></span></button>` }))]
+      .sort((a, b) => a.t.localeCompare(b.t));
+    const allDay = dayP.filter((p) => !p.time);
+    const next = st.plans.filter((p) => p.day > d && !p.done);
+    let nextHtml = "", last = "";
+    for (const p of next) { if (p.day !== last) { nextHtml += `<div class="pday">${WD[D(p.day).getDay()]}, ${dLong(p.day)}</div>`; last = p.day; } nextHtml += planRow(p, j.sessions.filter((s) => s.day === p.day && s.status !== "cancelled")); }
+    box.innerHTML = `
+      ${busy.length ? `<div class="pnote">💪 ${busy.length} трен. · ${busy[0].start_time}–${(() => { const l = busy[busy.length - 1]; const e = endMin(l.start_time, l.duration_min); return pad(Math.floor(e / 60) % 24) + ":" + pad(e % 60); })()}</div>` : ""}
+      <div class="card"><h3>Розпорядок дня</h3>${agenda.length ? agenda.map((x) => x.h).join("") : '<div class="none">На цей день нічого не заплановано за часом</div>'}</div>
+      <div class="card"><h3>Протягом дня</h3>${allDay.length ? allDay.map((p) => planRow(p, [])).join("") : '<div class="none">Справи без часу: купити, подзвонити, оплатити…</div>'}</div>
+      ${nextHtml ? `<div class="card"><h3>Найближчі 7 днів</h3>${nextHtml}</div>` : ""}`;
+  }
+  function planSheet(p) {
+    const x = p || { day: st.tab === "plans" ? st.planDate : st.date, time: "", duration_min: 60, title: "", place: "", note: "", cat: "personal", remind_min: 60 };
+    openSheet(`<h2>${p ? "План" : "Новий план"}<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+      <label class="field"><span>Що заплановано</span><input id="pl-title" value="${esc(x.title)}" placeholder="Перукар, стоматолог, забрати посилку…" maxlength="200"></label>
+      <div class="cats" role="group" aria-label="Категорія">${Object.entries(CATS).map(([k, [l, e]]) => `<button data-act="planCat" data-cat="${k}" aria-pressed="${x.cat === k}">${e} ${l}</button>`).join("")}</div>
+      <div class="row3">
+        <label class="field"><span>Дата</span><input id="pl-day" type="date" value="${x.day}"></label>
+        <label class="field"><span>Час</span><input id="pl-time" type="time" value="${x.time || ""}"></label>
+        <label class="field"><span>Хвилин</span><input id="pl-dur" type="number" inputmode="numeric" value="${x.duration_min || ""}" placeholder="60"></label>
+      </div>
+      <label class="field"><span>Нагадати в Telegram</span><select id="pl-rem">${REMIND.map(([v, l]) => `<option value="${v}" ${Number(x.remind_min) === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+      <label class="field"><span>Місце (необовʼязково)</span><input id="pl-place" value="${esc(x.place || "")}" placeholder="Адреса чи назва"></label>
+      <label class="field"><span>Нотатка</span><textarea id="pl-note" rows="2">${esc(x.note || "")}</textarea></label>
+      <div class="foot"><button class="btn blue" data-act="savePlan" data-id="${p ? p.id : ""}">Зберегти</button>${p ? `<button class="btn red" data-act="deletePlan" data-id="${p.id}">Видалити</button>` : ""}</div>`, (bg) => { if (!p) $("#pl-title", bg).focus(); bg.dataset.cat = x.cat; });
   }
 
   // ───── Редактор тренування ─────
@@ -604,6 +673,26 @@
       try { await navigator.clipboard.writeText(text); toast("Посилання скопійовано — надішліть його клієнту"); }
       catch { openSheet(`<h2>Посилання для ${esc(c ? c.name : "клієнта")}<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2><label class="field"><span>Скопіюйте й надішліть клієнту</span><textarea id="link-text" rows="3" readonly>${esc(text)}</textarea></label>`, (bg) => $("#link-text", bg).select()); }
     },
+    planOpenDay(d) { st.tab = "schedule"; st.date = d.day; st.mode = "day"; render(); window.scrollTo(0, 0); },
+    planToday() { st.planDate = today(); render(); },
+    planShift(d) { st.planDate = addDays(st.planDate, +d.n); render(); },
+    newPlan() { planSheet(null); },
+    async editPlan(d) {
+      let p = (st.plans || []).find((x) => x.id === +d.id);
+      if (!p) { const j = await must("plans_range", { from: addDays(st.date, -1), to: addDays(st.date, 8) }); p = j.plans.find((x) => x.id === +d.id); }
+      if (p) planSheet(p);
+    },
+    planCat(d, el) { const bg = $("#sheet"); bg.dataset.cat = d.cat; bg.querySelectorAll("[data-act=planCat]").forEach((b) => b.setAttribute("aria-pressed", b === el)); },
+    async savePlan(d) {
+      const v = (id) => $("#" + id).value;
+      const day = v("pl-day");
+      await must("plan_save", { plan: { id: d.id ? +d.id : undefined, title: v("pl-title"), day, time: v("pl-time"), duration_min: v("pl-dur"), remind_min: +v("pl-rem"), place: v("pl-place"), note: v("pl-note"), cat: $("#sheet").dataset.cat } });
+      closeSheet(); toast("Збережено");
+      if (st.tab === "plans") st.planDate = day;
+      render();
+    },
+    deletePlan(d) { askConfirm("Видалити цей план?", "Видалити", async () => { await must("plan_delete", { id: +d.id }); closeSheet(); toast("Видалено"); render(); }); },
+    async planDone(d) { await must("plan_done", { id: +d.id, done: d.done === "1" }); render(); },
     statsPeriod(d) { st.statsPeriod = d.p; render(); },
     statsShift(d) {
       const n = +d.n, x = D(st.statsDate);
@@ -672,6 +761,7 @@
   function render() {
     closeSheet();
     if (st.tab === "schedule") return renderSchedule();
+    if (st.tab === "plans") return renderPlans();
     if (st.tab === "clients") return renderClients();
     if (st.tab === "stats") return renderStats();
     return renderMore();

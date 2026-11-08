@@ -169,7 +169,7 @@ button { cursor: pointer; }
 
 /* Нижня навігація */
 .nav { position: fixed; left: 0; right: 0; bottom: 0; z-index: 10; background: var(--rubber); padding-bottom: var(--safe-b); }
-.nav-in { max-width: 720px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); height: var(--nav-h); }
+.nav-in { max-width: 720px; margin: 0 auto; display: grid; grid-template-columns: repeat(5, 1fr); height: var(--nav-h); }
 .nav button { border: 0; background: none; color: #a9adb6; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: 11px; font-weight: 600; }
 .nav button svg { width: 22px; height: 22px; }
 .nav button[aria-current="page"] { color: #fff; }
@@ -242,3 +242,29 @@ button { cursor: pointer; }
 .login .field { margin-bottom: 12px; }
 .login .err { color: #c0392b; font-size: 14px; min-height: 20px; margin: 4px 0 8px; }
 .login .ok-msg { color: #1e7d4f; font-size: 14px; margin: 0 0 10px; }
+
+/* Плани */
+.plan, .plan-sess { display: flex; align-items: stretch; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.card h3 + .plan, .card h3 + .plan-sess, .pday + .plan { border-top: 0; }
+.plan-sess { width: 100%; border-left: 0; border-right: 0; border-bottom: 0; background: none; text-align: left; font: inherit; color: var(--muted); padding-left: 38px; }
+.plan .chk { flex: none; width: 28px; height: 28px; margin-top: 2px; border-radius: 9px; border: 2px solid var(--line); background: var(--paper); color: #fff; font-weight: 800; }
+.plan.done .chk { background: #2e9d5b; border-color: #2e9d5b; }
+.plan .pbody { flex: 1; display: flex; gap: 10px; border: 0; background: none; text-align: left; font: inherit; color: inherit; padding: 0; min-width: 0; }
+.pt { flex: none; width: 52px; display: flex; flex-direction: column; font-variant-numeric: tabular-nums; }
+.pt small { color: var(--muted); font-size: 12px; }
+.pw { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pn { font-weight: 600; overflow-wrap: anywhere; }
+.ps { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+.plan.done .pn { text-decoration: line-through; color: var(--muted); }
+.clash { color: #b35a00; }
+.pday { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); padding: 12px 0 2px; }
+.pday:first-of-type { padding-top: 0; }
+.pnote { margin: 0 16px 10px; font-size: 14px; color: var(--muted); }
+.card .none { color: var(--muted); font-size: 14px; }
+.cats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.cats button { border: 1px solid var(--line); background: var(--paper); border-radius: 99px; padding: 6px 12px; font: 600 14px var(--text); color: inherit; }
+.cats button[aria-pressed="true"] { background: var(--plate-blue); border-color: var(--plate-blue); color: #fff; }
+.plans-mini .pm { display: flex; gap: 10px; width: 100%; border: 0; border-top: 1px solid var(--line); background: none; padding: 8px 0; font: inherit; color: inherit; text-align: left; }
+.plans-mini h3 + .pm { border-top: 0; }
+.plans-mini .pm b { width: 48px; flex: none; font-variant-numeric: tabular-nums; }
+.plans-mini .pm.done span { text-decoration: line-through; color: var(--muted); }

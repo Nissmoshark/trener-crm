@@ -143,6 +143,11 @@ export function createCore(st, opts = {}) {
     }
     return ss;
   }
+  const PLAN_CATS = ["personal", "beauty", "health", "errand", "work"];
+  async function plansRange(from, to) {
+    return (await all("plans", [["day", "gte", from], ["day", "lte", to]]))
+      .sort((a, b) => a.day.localeCompare(b.day) || (a.time || "").localeCompare(b.time || "") || a.id - b.id);
+  }
   const sessTotal = (s) => s.status === "cancelled" ? 0 : s.participants.reduce((a, p) => a + Number(p.price), 0) + Number(s.extra_amount || 0);
   function sessLabel(s) {
     if (s.kind === "group") return `${s.title || "Група"}${s.participants.length ? ` (${s.participants.length})` : ""}`;
@@ -214,8 +219,34 @@ export function createCore(st, opts = {}) {
     },
     async range(b) {
       if (!isDay(b.from) || !isDay(b.to)) throw new ApiError("Невірні дати");
-      return { sessions: await sessionsRange(b.from, b.to) };
+      return { sessions: await sessionsRange(b.from, b.to), plans: await plansRange(b.from, b.to) };
     },
+    // ── Особисті плани (перукар, справи, тощо) ──
+    async plans_range(b) {
+      if (!isDay(b.from) || !isDay(b.to)) throw new ApiError("Невірні дати");
+      return { plans: await plansRange(b.from, b.to) };
+    },
+    async plan_save(b) {
+      const p = b.plan ?? {};
+      const title = String(p.title ?? "").trim().slice(0, 200);
+      if (!title) throw new ApiError("Напишіть, що заплановано");
+      if (!isDay(p.day)) throw new ApiError("Вкажіть дату");
+      if (p.time && !isTime(p.time)) throw new ApiError("Невірний час");
+      const vals = {
+        day: p.day, time: p.time ? hhmm(p.time) : null, duration_min: p.time ? Math.max(0, Math.min(1440, Number(p.duration_min) || 0)) : 0,
+        title, place: p.place ? String(p.place).slice(0, 200) : null, note: p.note ? String(p.note).slice(0, 2000) : null,
+        cat: PLAN_CATS.includes(p.cat) ? p.cat : "personal", remind_min: p.time ? Math.max(0, Math.min(1440, Number(p.remind_min) || 0)) : 0,
+      };
+      if (p.id) {
+        const old = await st.get("plans", p.id);
+        if (!old) throw new ApiError("План не знайдено");
+        const again = old.day !== vals.day || old.time !== vals.time || old.remind_min !== vals.remind_min;
+        return { plan: await st.update("plans", p.id, { ...vals, ...(again ? { reminded: false } : {}) }) };
+      }
+      return { plan: await st.create("plans", { ...vals, reminded: false, done: false }, newId()) };
+    },
+    async plan_done(b) { await st.update("plans", b.id, { done: !!b.done }); return {}; },
+    async plan_delete(b) { await st.remove("plans", b.id); return {}; },
     async client_save(b) {
       const c = b.client ?? {};
       const name = String(c.name ?? "").trim().slice(0, 200);
@@ -508,9 +539,11 @@ export function createCore(st, opts = {}) {
 
   async function dayPlan(day, title) {
     const ss = (await sessionsRange(day, day)).filter((s) => s.status !== "cancelled");
-    if (!ss.length) return `${title}\n\nТренувань немає 🙂`;
+    const ps = (await plansRange(day, day)).filter((p) => !p.done);
+    const own = ps.length ? `\n\n📝 <b>Особисті плани</b>\n${ps.map((p) => `${p.time || "протягом дня"} ${esc(p.title)}${p.place ? ` · ${esc(p.place)}` : ""}`).join("\n")}` : "";
+    if (!ss.length) return `${title}\n\nТренувань немає 🙂${own}`;
     const lines = ss.map((s) => `${s.start_time} ${esc(sessLabel(s))} — ${Math.round(sessTotal(s))}`);
-    return `${title}\n\n${lines.join("\n")}\n\n💰 Разом: <b>${money(ss.reduce((a, s) => a + sessTotal(s), 0))}</b> · ${ss.length} трен.`;
+    return `${title}\n\n${lines.join("\n")}\n\n💰 Разом: <b>${money(ss.reduce((a, s) => a + sessTotal(s), 0))}</b> · ${ss.length} трен.${own}`;
   }
   async function daySummary(day) {
     const allS = await sessionsRange(day, day);
@@ -634,6 +667,19 @@ export function createCore(st, opts = {}) {
           const coach = s.trainer_name ? ` у ${esc(s.trainer_name)}` : "";
           for (const chat of await clientChats(x.id)) await send(chat, `⏰ Нагадування: тренування${coach} <b>${when} о ${x.start_time}</b> 💪`);
           out.push(`remind ${x.id}`);
+        }
+      }
+    }
+    // нагадування тренеру про особисті плани
+    if (s.trainer_chat_id && s.bot_token) {
+      for (const day of [L.day, addDays(L.day, 1)]) {
+        for (const p of await all("plans", [["day", "eq", day]])) {
+          if (!p.time || p.done || p.reminded || !(p.remind_min > 0)) continue;
+          const diff = toMin(p.time) + (day === L.day ? 0 : 1440) - L.min;
+          if (diff <= 0 || diff > p.remind_min) continue;
+          await st.update("plans", p.id, { reminded: true });
+          await send(s.trainer_chat_id, `🔔 <b>${day === L.day ? "Сьогодні" : "Завтра"} о ${p.time}</b> — ${esc(p.title)}${p.place ? `\n📍 ${esc(p.place)}` : ""}${p.note ? `\n${esc(p.note)}` : ""}`);
+          out.push(`plan ${p.id}`);
         }
       }
     }

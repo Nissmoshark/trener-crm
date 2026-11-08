@@ -24,6 +24,11 @@ export const SCHEMA = {
       ["package_id", "string", 32], ["day", "string", 10], ["status", "string", 16]],
     indexes: [["session_id"], ["client_id"], ["package_id"], ["day"]],
   },
+  plans: {
+    attrs: [["day", "string", 10], ["time", "string", 5], ["duration_min", "integer"], ["title", "string", 200], ["place", "string", 200],
+      ["note", "string", 2000], ["cat", "string", 16], ["remind_min", "integer"], ["reminded", "boolean", null, false], ["done", "boolean", null, false]],
+    indexes: [["day"]],
+  },
   moves: {
     attrs: [["session_id", "string", 32], ["from_day", "string", 10], ["from_time", "string", 5], ["to_day", "string", 10],
       ["to_time", "string", 5], ["reason", "string", 500], ["created_day", "string", 10]],

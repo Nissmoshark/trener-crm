@@ -326,3 +326,18 @@ input::-webkit-date-and-time-value { text-align: left; margin: 0; }
 html, body { overflow-x: hidden; max-width: 100%; }
 .app { overflow-x: clip; }
 .part-h .tag { display: inline-block; width: auto; white-space: nowrap; }
+
+/* Абонементи: проведено / заплановано / вільно */
+.plates i.b { background: color-mix(in srgb, var(--plate-blue) 35%, #fff); }
+.pkg { flex-wrap: wrap; }
+.pkg b small { display: block; font: 600 11px var(--text); color: var(--muted); }
+.pk-line { flex-basis: 100%; font-size: 12.5px; color: var(--muted); text-align: left; }
+.plates-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 6px 0 2px; }
+.plates-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.plates-legend i { display: inline-block; width: 8px; height: 16px; border-radius: 2px; background: var(--plate-blue); }
+.plates-legend i.u { background: #d6d9de; }
+.plates-legend i.b { background: color-mix(in srgb, var(--plate-blue) 35%, #fff); }
+.plates-legend.inline { display: inline; }
+.plates-legend.inline span { margin-right: 4px; }
+.part-hint { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.35; }
+.help { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 10px; font-size: 15px; line-height: 1.4; }

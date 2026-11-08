@@ -341,6 +341,12 @@
     const total = s.participants.reduce((a, p) => a + (p.pay === "package" ? pkgUnit(p.client_id, p.package_id) : Number(p.price) || 0), 0) + (s.kind === "group" ? Number(s.extra_amount) || 0 : 0);
     const b = $(".sum-line b", bg); if (b) b.textContent = `${num(total)} грн`;
   }
+  // Стан абонемента: проведено / заплановано / вільно
+  function pkgState(p) {
+    const done = p.used_done ?? p.used, booked = Math.max(0, p.used - done), free = Math.max(0, p.sessions_total - p.used);
+    return { done, booked, free, total: p.sessions_total };
+  }
+  const pkgShort = (p) => { const x = pkgState(p); return `вільно ${x.free} з ${x.total}`; };
   function activePkg(cid) {
     return st.packages.filter((p) => p.client_id === cid && (!p.expires_on || p.expires_on >= today()) && p.used < p.sessions_total).sort((a, b) => (a.bought_on < b.bought_on ? -1 : 1))[0];
   }
@@ -352,11 +358,13 @@
     const c = clientById(p.client_id) || { name: p.name };
     const pk = activePkg(p.client_id) || (p.package_id && st.packages.find((x) => x.id === p.package_id));
     return `<div class="part">
-      <div class="part-h"><span>${esc(c.name)}${p.confirm === "yes" ? ' <span class="tag ok">✅ буде</span>' : p.confirm === "no" ? ' <span class="tag debt">❌ не зможе</span>' : ""}${pk ? ` <span class="tag pkg">абон. ${pk.sessions_total - pk.used} з ${pk.sessions_total}</span>` : ""}</span><button data-act="rmPart" data-i="${i}" aria-label="Прибрати">${ICON.close.replace('stroke-width="2.2"', 'stroke-width="2" width="18" height="18"')}</button></div>
+      <div class="part-h"><span>${esc(c.name)}${p.confirm === "yes" ? ' <span class="tag ok">✅ буде</span>' : p.confirm === "no" ? ' <span class="tag debt">❌ не зможе</span>' : ""}${pk ? ` <span class="tag pkg">абонемент · ${pkgShort(pk)}</span>` : ""}</span><button data-act="rmPart" data-i="${i}" aria-label="Прибрати">${ICON.close.replace('stroke-width="2.2"', 'stroke-width="2" width="18" height="18"')}</button></div>
       <div class="part-r">
         <input type="number" inputmode="decimal" data-price="${i}" value="${p.pay === "package" ? pkgUnit(p.client_id, p.package_id) : p.price}" ${p.pay === "package" ? "disabled" : ""} aria-label="Ціна">
         <div class="pay" role="group" aria-label="Оплата">${Object.entries(PAY).map(([k, l]) => `<button data-act="pay" data-i="${i}" data-pay="${k}" aria-pressed="${p.pay === k}">${l}</button>`).join("")}</div>
       </div>
+      ${p.pay === "package" && pk ? `<div class="part-hint">Спишеться 1 тренування з абонемента (${num(pkgUnit(p.client_id, p.package_id))} грн). ${pkgState(pk).free <= 1 && !p.package_id ? "⚠️ Це останнє вільне." : ""}</div>`
+        : pk && pkgState(pk).free > 0 ? `<div class="part-hint">💡 У клієнта є абонемент (${pkgShort(pk)}). Щоб списати це тренування з нього — натисніть «Абонемент».</div>` : ""}
     </div>`;
   }
   function pickerHtml() {
@@ -399,7 +407,7 @@
       return `<button class="crow" data-act="openClient" data-id="${c.id}">
         <span class="ava">${esc(initials(c.name))}</span>
         <span><span class="nm">${esc(c.name)}</span><br><span class="ph">${esc(c.phone || "без телефону")}</span></span>
-        <span class="rt"><b>${c.price ? num(c.price) : "—"}</b>${Number(c.debt) ? `<span class="tag debt">борг ${num(c.debt)}</span>` : pk ? `<span class="tag ${pk.sessions_total - pk.used <= 2 ? "warn" : "pkg"}">${pk.sessions_total - pk.used <= 2 ? "⚠️ " : ""}${pk.sessions_total - pk.used} з ${pk.sessions_total}</span>` : `<span>${c.visits || 0} трен.</span>`}</span>
+        <span class="rt"><b>${c.price ? num(c.price) : "—"}</b>${Number(c.debt) ? `<span class="tag debt">борг ${num(c.debt)}</span>` : pk ? `<span class="tag ${pkgState(pk).free <= 2 ? "warn" : "pkg"}">${pkgState(pk).free <= 2 ? "⚠️ " : "абон. "}${pkgShort(pk)}</span>` : `<span>${c.visits || 0} трен.</span>`}</span>
       </button>`;
     };
     shell(`
@@ -433,11 +441,12 @@
       </div>
       ${debts.length ? `<div class="card"><h3>Борг: ${num(debts.reduce((a, h) => a + Number(h.price), 0))} грн</h3><ul class="hist">${debts.map((h) => `<li><span>${dLong(h.day)}${h.time ? ", " + h.time : ""}</span><button class="btn light" style="height:34px" data-act="payDebt" data-id="${h.part_id}">Оплачено · ${num(h.price)}</button></li>`).join("")}</ul>
         <button class="btn light wide" style="margin-top:8px" data-act="debtRemind" data-id="${c.id}">💬 ${c.tg_linked ? "Нагадати в Telegram" : "Надіслати нагадування"}</button></div>` : ""}
-      <div class="card"><h3>Абонементи</h3>
+      <div class="card"><h3 class="row-h"><span>Абонементи</span><button class="chip-btn sm" data-act="pkgHelp">Як це працює?</button></h3>
         ${j.packages.length ? j.packages.map((p) => `<button class="pkg" data-act="editPackage" data-id="${p.id}">
           <span style="min-width:96px"><b>${esc(p.title || p.sessions_total + " трен.")}</b><br><small style="color:var(--muted)">${num(p.price)} грн · ${dShort(p.bought_on)}${p.paid ? "" : " · не оплачено"}</small></span>
-          <span class="plates" aria-label="Використано ${p.used} з ${p.sessions_total}">${Array.from({ length: p.sessions_total }, (_, i) => `<i class="${i < p.used ? "u" : ""}"></i>`).join("")}</span>
-          <b>${p.sessions_total - p.used}</b></button>`).join("") : '<div style="color:var(--muted);font-size:14px;margin-bottom:8px">Абонементів немає</div>'}
+          <span class="plates" aria-label="Проведено ${pkgState(p).done}, заплановано ${pkgState(p).booked}, вільно ${pkgState(p).free} з ${p.sessions_total}">${Array.from({ length: p.sessions_total }, (_, i) => `<i class="${i < pkgState(p).done ? "u" : i < p.used ? "b" : ""}"></i>`).join("")}</span>
+          <b>${pkgState(p).free}<small>вільно</small></b>
+          <span class="pk-line">проведено ${pkgState(p).done} · заплановано ${pkgState(p).booked} · вільно ${pkgState(p).free}${p.expires_on ? ` · до ${dShort(p.expires_on)}` : ""}</span></button>`).join("") + '<div class="plates-legend"><span><i class="u"></i>проведено</span><span><i class="b"></i>заплановано</span><span><i></i>вільно</span></div>'  : '<div style="color:var(--muted);font-size:14px;margin-bottom:8px">Абонементів немає</div>'}
         <button class="btn light wide" style="margin-top:8px" data-act="newPackage">Продати абонемент</button>
       </div>
       <div class="card"><h3 class="row-h"><span>Програма тренувань</span><button class="chip-btn sm" data-act="editProgram" data-id="${c.id}">${prog.length ? "Змінити" : "Скласти"}</button></h3>
@@ -762,6 +771,20 @@
     async archiveClient(d) {
       const c = clientById(+d.id);
       await must("client_archive", { id: c.id, archived: !c.archived }); await refreshBase(); toast(c.archived ? "Повернуто з архіву" : "Перенесено в архів"); st.clientId = null; render();
+    },
+    pkgHelp() {
+      openSheet(`<h2>Як працюють абонементи<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+        <ol class="help">
+          <li><b>Продайте абонемент.</b> Картка клієнта → «Продати абонемент»: скільки тренувань і за скільки. Або прямо під час запису: натисніть «Абонемент», якщо його ще немає — додаток запропонує оформити.</li>
+          <li><b>Записуйте тренування з позначкою «Абонемент».</b> Кожне таке тренування забирає 1 тренування з абонемента. Якщо в клієнта є абонемент, «Абонемент» вибирається сам.</li>
+          <li><b>Як читати цифри.</b> <span class="plates-legend inline"><span><i class="u"></i>проведено</span> — вже відтреноване; <span><i class="b"></i>заплановано</span> — записане на майбутнє; <span><i></i>вільно</span> — ще можна записати.</span></li>
+          <li><b>Скасували тренування</b> — воно повертається в абонемент. <b>«Не прийшов»</b> — списується, як проведене.</li>
+          <li><b>Гроші.</b> Ціна абонемента ділиться на тренування: 3000 грн за 10 = 300 грн за кожне. У статистиці дохід зʼявляється по мірі тренувань, а не в день продажу.</li>
+          <li><b>Коли вільних 1–2</b> — у списку клієнтів зʼявиться ⚠️, а вранці бот нагадає продати новий.</li>
+          <li><b>Абонемент закінчився або минув термін</b> — «Абонемент» більше не спишеться. Продайте новий.</li>
+          <li><b>Видалили абонемент</b> — його тренування стануть боргом.</li>
+        </ol>
+        <div class="foot"><button class="btn blue" data-act="close">Зрозуміло</button></div>`);
     },
     async debtRemind(d) {
       const r = await must("debt_remind", { client_id: +d.id });

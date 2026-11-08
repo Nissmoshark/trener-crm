@@ -151,8 +151,13 @@ export function createCore(st, opts = {}) {
   // ───────── Дані ─────────
   const all = (c, f = []) => st.list(c, f);
   async function partsFor(filters) { return await all("parts", filters); }
+  // used — усі списані (проведені + заплановані), used_done — уже проведені (до сьогодні включно)
   function withUse(pkgs, parts, excludeSession) {
-    return pkgs.map((p) => ({ ...p, used: parts.filter((x) => x.package_id === p.id && x.status !== "cancelled" && x.session_id !== excludeSession).length }))
+    const today = local().day;
+    return pkgs.map((p) => {
+      const mine = parts.filter((x) => x.package_id === p.id && x.status !== "cancelled" && x.session_id !== excludeSession);
+      return { ...p, used: mine.length, used_done: mine.filter((x) => x.day <= today).length };
+    })
       .sort((a, b) => (b.bought_on || "").localeCompare(a.bought_on || "") || b.id - a.id);
   }
   async function sessionsRange(from, to) {

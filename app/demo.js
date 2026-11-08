@@ -68,7 +68,7 @@
   const nid = () => db.seq++;
   const fail = (m) => { throw Object.assign(new Error(m), { api: true }); };
   const used = (pkId, exSess = -1) => db.participants.filter((x) => x.package_id === pkId && x.session_id !== exSess && (db.sessions.find((s) => s.id === x.session_id) || {}).status !== "cancelled").length;
-  const withUse = (p) => ({ ...p, used: used(p.id) });
+  const withUse = (p) => ({ ...p, used: used(p.id), used_done: db.participants.filter((x) => x.package_id === p.id && (db.sessions.find((s) => s.id === x.session_id) || {}).status !== "cancelled" && (db.sessions.find((s) => s.id === x.session_id) || {}).day <= today()).length });
   const pickPackage = (cid, exSess) => db.packages.filter((p) => p.client_id === cid && (!p.expires_on || p.expires_on >= today()))
     .sort((a, b) => (a.bought_on < b.bought_on ? -1 : 1)).find((p) => used(p.id, exSess) < p.sessions_total);
   const fullSession = (s) => ({

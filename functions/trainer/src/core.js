@@ -31,6 +31,8 @@ export function createCore(st, opts = {}) {
       sAt = Date.now();
       for (const k of ["secret", "token_secret"]) if (!S[k]) { S[k] = randCode(24); await kvSet(k, S[k]); }
       if (S.mt_migrated !== "1") await migrateToTenants();
+      // перший тренер (ініціатор) — безстроковий доступ, один раз
+      if (S.t1_lifetime !== "1") { const T1 = await loadTenant("t1"); if (T1) { T1.data.lifetime = "1"; await saveTenant(T1); } await kvSet("t1_lifetime", "1"); }
     }
     return S;
   }
@@ -88,6 +90,8 @@ export function createCore(st, opts = {}) {
   }
   // Підписка: пробний період / оплачено / закінчилась / заблоковано
   function subInfo(d) {
+    // безстроковий доступ (ініціатор проєкту): усе Pro, без дати й нагадувань про оплату
+    if (d.lifetime === "1" && d.blocked !== "1") return { state: "active", until: "", days_left: 99999, writable: true, plan: "pro", pro: true, lifetime: true };
     const today = local().day;
     const until = [d.trial_until, d.paid_until].filter(Boolean).sort().pop() || "";
     const paid = !!d.paid_until && d.paid_until >= today;
@@ -751,6 +755,7 @@ export function createCore(st, opts = {}) {
       if (b.paid_until !== undefined) { if (b.paid_until && !isDay(b.paid_until)) throw new ApiError("Невірна дата"); d.paid_until = b.paid_until || ""; d.warned = ""; }
       if (b.trial_until !== undefined) { if (b.trial_until && !isDay(b.trial_until)) throw new ApiError("Невірна дата"); d.trial_until = b.trial_until || ""; d.warned = ""; }
       if (b.plan !== undefined) d.plan = b.plan === "pro" ? "pro" : "basic";
+      if (b.lifetime !== undefined) d.lifetime = b.lifetime ? "1" : "";
       if (b.confirm_claim) {
         let c = {}; try { c = JSON.parse(d.paid_claim || "{}"); } catch { /* */ }
         if (!c.months) throw new ApiError("Немає заявки на оплату");

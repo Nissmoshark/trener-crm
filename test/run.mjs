@@ -449,7 +449,7 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
   const TI = (await OK("login", { phone: "0936419354", password: "Old2026pass" })).token;
   const bI = await OK("bootstrap", {}, TI);
   assert.equal(bI.clients.length, 1); assert.equal(bI.settings.trainer_name, "Ігор"); assert.equal(bI.settings.tg_linked, true); assert.equal(bI.settings.gym_address, "Зал");
-  assert.equal(bI.subscription.state, "active", "first trainer gets a year");
+  assert.equal(bI.subscription.state, "active"); assert.equal(bI.subscription.lifetime, true); assert.equal(bI.subscription.pro, true);
   assert.ok([...stM.db.clients.values()].every((c) => c.tid === "t1"));
   assert.equal((await stM.get("kv", "pass_hash")).value, "");
   // другий тренер реєструється
@@ -504,6 +504,10 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
     await OK("admin_tenant_update", { tid: ol.tid, blocked: true }, AT);
     assert.match((await A("client_save", { client: { name: "x" } }, T2)).error, /призупинено/);
     await OK("admin_tenant_update", { tid: ol.tid, blocked: false }, AT);
+    await OK("admin_tenant_update", { tid: ol.tid, lifetime: true }, AT);
+    sb = (await OK("bootstrap", {}, T2)).subscription; assert.equal(sb.lifetime, true); assert.equal(sb.pro, true);
+    await OK("admin_tenant_update", { tid: ol.tid, lifetime: false }, AT);
+    assert.equal((await OK("bootstrap", {}, T2)).subscription.lifetime, undefined);
     // новий тренер — пробний період з налаштувань адміна
     const T3 = (await OK("register", { name: "Петро", phone: "0631112233", password: "Petro2026x" }, null)).token;
     assert.equal((await OK("bootstrap", {}, T3)).subscription.days_left, 7);

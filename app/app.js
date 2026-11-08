@@ -655,8 +655,8 @@
     const s = st.settings;
     const sb = st.sub;
     const subCard = sb ? `<button class="card sub-card" data-act="subSheet">
-        <span class="sub-l"><b>Підписка: ${sb.state === "trial" ? "пробний період" : sb.plan === "pro" ? "Pro" : "Звичайний"}</b>
-        <small>${sb.state === "expired" ? "закінчилась — лише перегляд" : sb.state === "blocked" ? "призупинено" : `діє до ${dLong(sb.until)} · ще ${sb.days_left} дн.`}${sb.paid_claim ? " · оплата на перевірці" : ""}</small></span>
+        <span class="sub-l"><b>Підписка: ${sb.lifetime ? "безстрокова Pro" : sb.state === "trial" ? "пробний період" : sb.plan === "pro" ? "Pro" : "Звичайний"}</b>
+        <small>${sb.lifetime ? "усі можливості й оновлення без обмежень" : sb.state === "expired" ? "закінчилась — лише перегляд" : sb.state === "blocked" ? "призупинено" : `діє до ${dLong(sb.until)} · ще ${sb.days_left} дн.`}${sb.paid_claim ? " · оплата на перевірці" : ""}</small></span>
         <span class="tag ${sb.writable ? (sb.pro ? "ok" : "pkg") : "debt"}">${sb.pro ? "Pro" : sb.writable ? "Звичайний" : "🔒"}</span>${ICON.right}</button>` : "";
     shell(`<header class="top"><div class="top-row"><h1 class="title">Налаштування</h1></div></header>
       ${subCard}
@@ -786,6 +786,12 @@
     },
     subSheet() {
       const sb = st.sub; if (!sb || DEMO) { toast("Підписка працює в робочій версії"); return; }
+      if (sb.lifetime) {
+        openSheet(`<h2>Підписка<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+          <div class="card" style="margin:0 0 12px"><b>♾️ Безстроковий доступ Pro</b><div class="msub">Усі можливості журналу й усі майбутні оновлення — без оплати й без обмежень за часом. Дякуємо, що були з нами від самого початку!</div></div>
+          <div class="foot"><button class="btn blue" data-act="close">Чудово</button></div>`);
+        return;
+      }
       const pr = { basic: sb.price_basic, pro: sb.price_pro };
       const sel = st.subSel || { plan: sb.plan === "pro" || sb.state === "trial" ? "pro" : "basic", months: 1 };
       st.subSel = sel;
@@ -1107,14 +1113,15 @@
       if (!t.ok) { box.innerHTML = `<div class="none">${esc(t.error)}</div>`; return; }
       const ST = { trial: ["пробний", "pkg"], active: ["оплачено", "ok"], expired: ["закінчилась", "debt"], blocked: ["призупинено", "debt"] };
       box.innerHTML = t.tenants.length ? t.tenants.map((x) => `<div class="ten ${x.paid_claim ? "claim" : ""}">
-        <div class="row-h"><b>${esc(x.name || "без імені")}</b><span class="tag ${ST[x.state][1]}">${ST[x.state][0]}${x.state === "active" ? " · " + (x.plan === "pro" ? "Pro" : "Звич.") : ""}</span></div>
-        <div class="msub">${esc(x.phone)} · ${x.tg_linked ? "Telegram ✅" : "без Telegram"} · до ${x.until || "—"} · клієнтів ${x.clients} · трен. за 30 дн. ${x.sessions_30d}${x.last_seen ? " · був(ла) " + x.last_seen : ""}</div>
+        <div class="row-h"><b>${esc(x.name || "без імені")}</b><span class="tag ${ST[x.state][1]}">${x.lifetime ? "♾️ безстроково" : ST[x.state][0] + (x.state === "active" ? " · " + (x.plan === "pro" ? "Pro" : "Звич.") : "")}</span></div>
+        <div class="msub">${esc(x.phone)} · ${x.tg_linked ? "Telegram ✅" : "без Telegram"} · ${x.lifetime ? "без обмежень" : "до " + (x.until || "—")} · клієнтів ${x.clients} · трен. за 30 дн. ${x.sessions_30d}${x.last_seen ? " · був(ла) " + x.last_seen : ""}</div>
         ${x.paid_claim ? `<div class="claim-box">💳 Заявка: ${x.paid_claim.plan === "pro" ? "Pro" : "Звичайний"} на ${x.paid_claim.months} міс.${x.paid_claim.amount ? " · " + x.paid_claim.amount + " грн" : ""} · ${dt(x.paid_claim_at)}
           <div class="actions"><button class="btn blue" data-a="conf" data-tid="${x.tid}">Підтвердити оплату</button><button class="btn light" data-a="rej" data-tid="${x.tid}">Не знайшов</button></div></div>` : ""}
         <div class="actions ten-act">
           <button class="btn light" data-a="imp" data-tid="${x.tid}">Увійти як</button>
           <button class="btn light" data-a="ext" data-tid="${x.tid}">+ днів</button>
           <button class="btn light" data-a="plan" data-tid="${x.tid}" data-plan="${x.plan === "pro" ? "basic" : "pro"}">→ ${x.plan === "pro" ? "Звичайний" : "Pro"}</button>
+          <button class="btn light" data-a="life" data-tid="${x.tid}" data-v="${x.lifetime ? "0" : "1"}">${x.lifetime ? "Зняти безстроковий" : "♾️ Безстроково"}</button>
           <button class="btn light" data-a="msg" data-tid="${x.tid}">Написати</button>
           <button class="btn light" data-a="pass" data-tid="${x.tid}">Пароль</button>
           <button class="btn ${x.state === "blocked" ? "light" : "red"}" data-a="blk" data-tid="${x.tid}" data-v="${x.state === "blocked" ? "0" : "1"}">${x.state === "blocked" ? "Відновити" : "Призупинити"}</button>
@@ -1131,6 +1138,7 @@
       if (a === "ext") { const n = prompt("На скільки днів продовжити?", "30"); if (n) return run("admin_tenant_update", { tid, extend_days: +n }, (r) => "Продовжено до " + r.tenant.paid_until); return; }
       if (a === "conf") return run("admin_tenant_update", { tid, confirm_claim: true }, (r) => `Оплату підтверджено: ${r.tenant.plan === "pro" ? "Pro" : "Звичайний"} до ${r.tenant.paid_until}`);
       if (a === "rej") return run("admin_tenant_update", { tid, reject_claim: true }, () => "Заявку відхилено, тренеру надіслано повідомлення");
+      if (a === "life") return run("admin_tenant_update", { tid, lifetime: b.dataset.v === "1" }, () => (b.dataset.v === "1" ? "Безстроковий доступ увімкнено" : "Безстроковий доступ знято"));
       if (a === "plan") return run("admin_tenant_update", { tid, plan: b.dataset.plan }, () => "Тариф змінено");
       if (a === "blk") return run("admin_tenant_update", { tid, blocked: b.dataset.v === "1" }, () => (b.dataset.v === "1" ? "Кабінет призупинено" : "Кабінет відновлено"));
       if (a === "bill") return run("admin_billing_save", { price_basic: +$("#b-basic").value || 0, price_pro: +$("#b-pro").value || 0, mono_url: $("#b-mono").value, pay_info: $("#b-info").value, trial_days: +$("#b-trial").value || 0 }, () => "Тарифи збережено");

@@ -916,6 +916,11 @@ export function createCore(st, opts = {}) {
     const cmd = cmdRaw.replace(/@\w+$/, "");
     const arg = rest.join(" ");
     if (cmd === "/start") {
+      // цей Telegram уже підключений як тренер — номер вдруге не питаємо
+      if (isTrainer && arg.startsWith("t_")) {
+        await kvSet("trainer_code", "");
+        return send(chat, "✅ Цей Telegram уже підключено до вашого журналу — нічого робити не треба.\n\nКоманди: /today /tomorrow /week /debts", { reply_markup: NO_KB });
+      }
       if (/^[tc]_[\w-]{6,40}$/.test(arg)) {
         await kvSet(pendKey, `${arg[0]}:${arg.slice(2)}`);
         return send(chat, "Щоб підтвердити, що це ви, натисніть кнопку нижче — бот перевірить номер телефону.", { reply_markup: PHONE_KB });

@@ -897,7 +897,9 @@
       let body;
       if (s.bot_ready) {
         body = `<div class="card" style="margin:0 0 12px"><b>@${esc(s.bot_username)}</b><div style="font-size:14px;color:var(--muted);margin-top:4px">${s.tg_linked ? "✅ Ваш Telegram підключено: щоранку план, увечері підсумок, команди /today /tomorrow /week /debts." : "Натисніть кнопку нижче, у Telegram — «Старт», потім «Надіслати мій номер». Номер має збігатися з номером входу."}</div></div>
-          <button class="btn blue wide" data-act="tgTrainer">${s.tg_linked ? "Підключити інший пристрій" : "Підключити мій Telegram"}</button>
+          ${s.tg_linked ? `<a class="btn blue wide" href="https://t.me/${esc(s.bot_username)}" target="_blank" rel="noopener">Відкрити бота</a>
+          <button class="btn light wide" style="margin-top:8px" data-act="tgTrainer">Підключити інший Telegram-акаунт</button>` : '<button class="btn blue wide" data-act="tgTrainer">Підключити мій Telegram</button>'}
+          <p class="hint" style="margin-top:10px">${s.tg_linked ? "На інших пристроях з тим самим Telegram нічого підключати не треба — бот уже працює." : "У Telegram натисніть «Старт», а потім кнопку «📱 Надіслати мій номер» унизу екрана."}</p>
           ${s.tg_linked ? '<button class="btn light wide" style="margin-top:8px" data-act="tgUnlink">Відʼєднати мій Telegram</button>' : ""}
           ${s.bot_managed ? "" : `<details style="margin-top:16px"><summary style="cursor:pointer;color:var(--muted);font-size:14px">Замінити бота</summary>${tokenForm}</details>`}`;
       } else if (s.bot_managed) {
@@ -917,13 +919,17 @@
       openSheet(`<h2>Мій вхід<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
         <label class="field"><span>Номер телефону${st.settings.phone_hint ? " (зараз " + esc(st.settings.phone_hint) + ")" : ""}</span><input id="pin-phone" type="tel" autocomplete="tel" placeholder="Залиште порожнім, щоб не змінювати"></label>
         <label class="field"><span>Номер Telegram — якщо відрізняється${st.settings.tg_phone_hint ? " (зараз " + esc(st.settings.tg_phone_hint) + ")" : ""}</span><input id="pin-tg" type="tel" placeholder="${st.settings.tg_phone_hint ? "Залиште порожнім або «-», щоб прибрати" : "Номер, на який зареєстровано ваш Telegram"}"></label>
-        <label class="field"><span>Новий пароль</span><input id="pin-new" type="password" autocomplete="new-password" placeholder="Від 8 символів, літери й цифри"></label>
-        <label class="field"><span>Поточний пароль — для підтвердження</span><input id="pin-old" type="password" autocomplete="current-password"></label>
-        <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Після зміни інші пристрої вийдуть із системи. Якщо зміните номер — Telegram треба буде підключити заново.</p>
+        <label class="field"><span>Новий пароль — лише якщо хочете змінити</span><input id="pin-new" type="password" autocomplete="off" placeholder="Залиште порожнім, щоб не змінювати"></label>
+        <label class="field"><span>Повторіть новий пароль</span><input id="pin-new2" type="password" autocomplete="off"></label>
+        <label class="toggle" style="margin:-4px 0 10px"><input type="checkbox" data-act="pinShow"> Показати паролі</label>
+        <label class="field"><span>Поточний пароль — для підтвердження змін</span><input id="pin-old" type="password" autocomplete="current-password"></label>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 12px">Якщо iPhone запропонує «надійний пароль» — краще відмовтесь і введіть свій, щоб його памʼятати. Після зміни пароля інші пристрої вийдуть із системи. Якщо зміните номер — Telegram треба буде підключити заново.</p>
         <div class="foot"><button class="btn blue" data-act="doChangePin">Зберегти</button></div>`);
     },
+    pinShow(d, el) { for (const id of ["pin-new", "pin-new2", "pin-old"]) { const i = $("#" + id); if (i) i.type = el.checked ? "text" : "password"; } },
     async doChangePin() {
       if (DEMO) { closeSheet(); toast("У демо вхід не потрібен"); return; }
+      if ($("#pin-new").value !== $("#pin-new2").value) { toast("Нові паролі не збігаються", true); return; }
       const j = await must("credentials_save", { old: $("#pin-old").value, new: $("#pin-new").value, phone: $("#pin-phone").value.trim(), tg_phone: $("#pin-tg").value.trim() });
       token = j.token; localStorage.setItem("trainer-token", token); closeSheet(); toast("Збережено"); await refreshBase(); render();
     },

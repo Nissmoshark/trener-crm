@@ -178,6 +178,10 @@ await msg(555, { text: "/start " + code3 });
 await msg(555, { contact: { phone_number: "+380501234567", user_id: 555 } });
 assert.match(sent.at(-1).text, /Бот підключено/);
 assert.equal((await ok("bootstrap", {}, tok)).settings.tg_linked, true);
+// повторне посилання з уже підключеного Telegram — номер не питаємо
+{ const again = (await ok("tg_link_trainer", {}, tok)).url.split("start=")[1];
+  await msg(555, { text: "/start " + again });
+  assert.match(sent.at(-1).text, /уже підключено/); assert.ok(!sent.at(-1).reply_markup.keyboard); }
 // команди лише для тренера
 sent.length = 0;
 await msg(777, { text: "/today" });

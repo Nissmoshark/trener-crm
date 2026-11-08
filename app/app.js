@@ -31,6 +31,11 @@
     try { await navigator.clipboard.writeText(text); toast(okMsg || "Скопійовано"); }
     catch { openSheet(`<h2>Текст<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2><label class="field"><span>Скопіюйте й надішліть</span><textarea id="share-text" rows="6" readonly>${esc(text)}</textarea></label>`, (bg) => $("#share-text", bg).select()); }
   }
+  // Суми приховані від сторонніх очей; кнопка-око показує
+  let hideMoney = true;
+  try { hideMoney = localStorage.getItem("show_money") !== "1"; } catch {}
+  document.documentElement.classList.toggle("priv", hideMoney);
+  const moneyBtn = () => `<button class="money-eye" data-act="money" aria-label="${hideMoney ? "Показати суми" : "Сховати суми"}" aria-pressed="${!hideMoney}">${hideMoney ? '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>' : '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 5.1A10 10 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.1M6.6 6.6C3.8 8.4 2 12 2 12s3.5 7 10 7c1.7 0 3.2-.4 4.5-1.1"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>'}</button>`;
   const ICON = {
     left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
     right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
@@ -153,8 +158,8 @@
     const debt = ok.flatMap((s) => s.participants).filter((p) => p.pay === "debt").reduce((a, p) => a + Number(p.price), 0);
     const people = new Set(ok.flatMap((s) => s.participants.map((p) => p.client_id))).size;
     return `<div class="total">
-      <div><div class="sum">${num(sum)}<span>грн</span></div></div>
-      <div class="meta">${label}<br><b>${ok.length}</b> трен. · <b>${people}</b> клієнт.${debt ? `<br><span style="color:var(--plate-red)">борг ${num(debt)} грн</span>` : ""}</div>
+      <div class="sum-wrap"><div class="sum money">${num(sum)}<span>грн</span></div>${moneyBtn()}</div>
+      <div class="meta">${label}<br><b>${ok.length}</b> трен. · <b>${people}</b> клієнт.${debt ? `<br><span style="color:var(--plate-red)">борг <span class="money">${num(debt)}</span> грн</span>` : ""}</div>
     </div>`;
   }
   function sessCard(s) {
@@ -170,7 +175,7 @@
     return `<button class="sess ${s.kind} ${s.status}${pk ? " abon" : ""}" data-act="editSession" data-id="${s.id}"${pk ? ' aria-label="Абонемент"' : ""}>
       <div class="time">${pk ? '<i class="abon-a" title="Абонемент">А</i>' : ""}${s.start_time}<small>${s.duration_min} хв</small></div>
       <div class="body"><div class="who">${esc(sessWho(s))}</div><div class="sub">${sub.join(" ")}</div></div>
-      <div class="price">${num(sessTotal(s) || (s.status === "cancelled" ? s.participants.reduce((a, p) => a + p.price, 0) + Number(s.extra_amount) : 0))}</div>
+      <div class="price money">${num(sessTotal(s) || (s.status === "cancelled" ? s.participants.reduce((a, p) => a + p.price, 0) + Number(s.extra_amount) : 0))}</div>
     </button>`;
   }
   function dayView(ss) {
@@ -183,8 +188,8 @@
     for (let i = 0; i < 7; i++) {
       const day = addDays(f, i), ds = ss.filter((s) => s.day === day), sum = ds.reduce((a, s) => a + sessTotal(s), 0);
       html += `<button class="wday ${day === today() ? "today" : ""}" data-act="openDay" data-day="${day}">
-        <div class="wday-h"><span class="d">${WD[D(day).getDay()]}, ${D(day).getDate()}<small>${ds.filter((s) => s.status !== "cancelled").length || ""}${ds.length ? " трен." : ""}</small></span><span class="s">${sum ? num(sum) + " грн" : ""}</span></div>
-        ${ds.length ? `<ul>${ds.map((s) => `<li class="${s.kind} ${s.status}"><span class="t">${s.start_time}</span><span class="n">${esc(sessWho(s))}</span><span>${num(sessTotal(s))}</span></li>`).join("")}</ul>` : '<div class="none">Немає тренувань</div>'}
+        <div class="wday-h"><span class="d">${WD[D(day).getDay()]}, ${D(day).getDate()}<small>${ds.filter((s) => s.status !== "cancelled").length || ""}${ds.length ? " трен." : ""}</small></span><span class="s money">${sum ? num(sum) + " грн" : ""}</span></div>
+        ${ds.length ? `<ul>${ds.map((s) => `<li class="${s.kind} ${s.status}"><span class="t">${s.start_time}</span><span class="n">${esc(sessWho(s))}</span><span class="money">${num(sessTotal(s))}</span></li>`).join("")}</ul>` : '<div class="none">Немає тренувань</div>'}
       </button>`;
     }
     return html + "</div>";
@@ -203,7 +208,7 @@
     for (let d = from; d <= to; d = addDays(d, 1)) {
       const x = sums[d], out = d < ms || d > me;
       html += `<button class="mcell ${out ? "out" : ""} ${d === today() ? "today" : ""}" data-act="openDay" data-day="${d}" aria-label="${dLong(d)}: ${x.n} тренувань, ${num(x.v)} грн">
-        <span class="n">${D(d).getDate()}</span>${!out && x.n ? `<span class="c">${x.n} трен.</span><span class="v">${num(x.v)}</span><span class="bar" style="width:${max ? Math.max(12, (x.v / max) * 100) : 0}%"></span>` : ""}
+        <span class="n">${D(d).getDate()}</span>${!out && x.n ? `<span class="c">${x.n} трен.</span><span class="v money">${num(x.v)}</span><span class="bar" style="width:${max ? Math.max(12, (x.v / max) * 100) : 0}%"></span>` : ""}
       </button>`;
     }
     return html + "</div></div>";
@@ -694,6 +699,7 @@
       else { const x = D(monthStart(st.date)); x.setMonth(x.getMonth() + n); st.date = iso(x); }
       render();
     },
+    money() { hideMoney = !hideMoney; try { localStorage.setItem("show_money", hideMoney ? "0" : "1"); } catch {} document.documentElement.classList.toggle("priv", hideMoney); document.querySelectorAll(".money-eye").forEach((b) => (b.outerHTML = moneyBtn())); },
     openDay(d) { st.date = d.day; st.mode = "day"; render(); },
     newSession() { sessionSheet(null); },
     newSessionFor() { const c = clientById(st.clientId); sessionSheet(null); if (c) { addParticipant(c); drawSessionSheet(); } },

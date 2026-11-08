@@ -80,6 +80,7 @@
   const A = {
     status: () => ({ needs_setup: false, trainer_name: db.settings.trainer_name }),
     login: () => ({ token: "demo" }),
+    register: () => ({ token: "demo" }),
     setup_pin: () => ({ token: "demo" }),
     bootstrap() {
       const t = today();
@@ -91,6 +92,7 @@
         }).sort((a, b) => (a.archived - b.archived) || a.name.localeCompare(b.name, "uk")),
         packages: db.packages.map(withUse),
         settings: { ...db.settings, bot_username: "", tg_linked: false, bot_ready: false, phone_hint: "", backup_weekly: true },
+        subscription: { state: "trial", plan: "basic", pro: true, writable: true, days_left: 14, until: addDays(today(), 14), price_basic: 199, price_pro: 349, mono_url: "", pay_info: "", paid_claim: "" },
       };
     },
     plans_range: (b) => ({ plans: db.plans.filter((p) => p.day >= b.from && p.day <= b.to).sort((a, c) => (a.day + (a.time || "")).localeCompare(c.day + (c.time || ""))) }),

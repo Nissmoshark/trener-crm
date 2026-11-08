@@ -93,8 +93,12 @@ export function createCore(st, opts = {}) {
     const paid = !!d.paid_until && d.paid_until >= today;
     const state = d.blocked === "1" ? "blocked" : until && until >= today ? (paid ? "active" : "trial") : "expired";
     const days = until ? Math.round((Date.parse(until + "T12:00:00Z") - Date.parse(today + "T12:00:00Z")) / 86400000) : -1;
-    return { state, until, days_left: Math.max(0, days), writable: state === "trial" || state === "active" };
+    const plan = d.plan === "pro" ? "pro" : "basic";
+    // Pro: пробний період або оплачений Pro
+    const pro = state === "trial" || (state === "active" && plan === "pro");
+    return { state, until, days_left: Math.max(0, days), writable: state === "trial" || state === "active", plan, pro };
   }
+  const PRO_MSG = "Це можливість тарифу Pro: Telegram-бот, нагадування клієнтам і форма запису. Змінити тариф — «Ще» → «Підписка».";
   // Перенесення одного тренера (старої версії) у перший кабінет
   async function migrateToTenants() {
     const keys = ["remind_before_min", "digest_morning", "digest_evening", "trainer_name", "trainer_phone", "trainer_tg_phone", "pass_salt", "pass_hash", "pass_ver",
@@ -372,7 +376,8 @@ export function createCore(st, opts = {}) {
           phone_hint: maskPhone(s.trainer_phone), tg_phone_hint: maskPhone(s.trainer_tg_phone), bot_ready: !!s.bot_token, bot_managed: !!opts.botToken,
           gym_address: s.gym_address || "", month_goal: Number(s.month_goal) || 0, backup_weekly: s.backup_weekly !== "0", last_backup: s.last_backup || "",
         },
-        subscription: { ...subInfo(s), price_text: s.price_text || "", pay_info: s.pay_info || "", paid_claim_at: s.paid_claim_at || "" },
+        subscription: { ...subInfo(s), price_basic: Number(s.price_basic) || 0, price_pro: Number(s.price_pro) || 0, mono_url: s.mono_url || "",
+          pay_info: s.pay_info || "", price_text: s.price_text || "", paid_claim_at: s.paid_claim_at || "", paid_claim: s.paid_claim || "" },
       };
     },
     async range(b) {
@@ -656,7 +661,7 @@ export function createCore(st, opts = {}) {
       const lines = ds.map((d) => `• ${fmtDay(d.day)}${d.time ? ", " + d.time : ""} — ${money(d.price)}`);
       const who = s.trainer_name ? `Ваш тренер ${s.trainer_name}` : "Ваш тренер";
       const plain = `Привіт, ${c.name}! ${who} нагадує про оплату тренувань:\n${lines.join("\n")}\nРазом: ${money(total)}. Дякую! 💪`;
-      if (c.tg_chat_id && s.bot_token && (await send(c.tg_chat_id, esc(plain).replace(`Разом: ${money(total)}`, `<b>Разом: ${money(total)}</b>`)))) {
+      if (subInfo(s).pro && c.tg_chat_id && s.bot_token && (await send(c.tg_chat_id, esc(plain).replace(`Разом: ${money(total)}`, `<b>Разом: ${money(total)}</b>`)))) {
         await tSet("debt_reminded_" + c.id, String(nowMs()));
         return { sent: true, total };
       }
@@ -687,9 +692,12 @@ export function createCore(st, opts = {}) {
     async backup_now() { return await sendBackup(); },
     async sub_paid(b) {
       const s = await TS(true);
-      await tSet("paid_claim_at", new Date(nowMs()).toISOString());
+      const plan = b.plan === "pro" ? "pro" : "basic", months = [1, 3, 6, 12].includes(Number(b.months)) ? Number(b.months) : 1;
+      const amount = Math.max(0, Math.round(Number(b.amount) || 0));
+      const claim = JSON.stringify({ plan, months, amount, note: b.note ? String(b.note).slice(0, 300) : "" });
+      await tSetMany({ paid_claim_at: new Date(nowMs()).toISOString(), paid_claim: claim });
       const g = await settings();
-      if (g.admin_chat_id) await send(g.admin_chat_id, `💳 <b>${esc(s.trainer_name || "Тренер")}</b> (${maskPhone(s.trainer_phone)}) повідомив(ла) про оплату${b.note ? `:\n${esc(String(b.note).slice(0, 300))}` : ""}\nПідписка зараз до: ${subInfo(s).until || "—"}`);
+      if (g.admin_chat_id) await send(g.admin_chat_id, `💳 <b>${esc(s.trainer_name || "Тренер")}</b> (${maskPhone(s.trainer_phone)}) оплатив(ла): ${plan === "pro" ? "Pro" : "Звичайний"} на ${months} міс.${amount ? ` · ${amount} грн` : ""}${b.note ? `\n${esc(String(b.note).slice(0, 300))}` : ""}\nПідтвердіть в адмінці.`);
       return { notified: !!g.admin_chat_id };
     },
     async export() {
@@ -717,7 +725,7 @@ export function createCore(st, opts = {}) {
         bot: { username: s.bot_username || "", managed: !!opts.botToken, cfg: s.bot_cfg || "", webhook: wh?.result ? { url: (wh.result.url || "").replace(/\?.*$/, "?…"), pending: wh.result.pending_update_count, last_error: wh.result.last_error_message || "", last_error_at: wh.result.last_error_date ? new Date(wh.result.last_error_date * 1000).toISOString() : "" } : null },
         ticks: { last: s.last_tick ? new Date(Number(s.last_tick)).toISOString() : "", slack_max: SLACK },
         tick_url: base && s.secret ? `${base}/?tick=${s.secret}` : "",
-        billing: { price_text: s.price_text || "", pay_info: s.pay_info || "", trial_days: Number(s.trial_days || 14) },
+        billing: { price_basic: Number(s.price_basic) || 0, price_pro: Number(s.price_pro) || 0, mono_url: s.mono_url || "", pay_info: s.pay_info || "", trial_days: Number(s.trial_days || 14) },
         admin_tg: !!s.admin_chat_id,
       };
     },
@@ -728,7 +736,7 @@ export function createCore(st, opts = {}) {
       return { tenants: ts.map((T) => {
         const d = T.data, sub = subInfo(d);
         return { tid: T.id, name: d.trainer_name || "", phone: maskPhone(d.trainer_phone), tg_linked: !!d.trainer_chat_id, created_at: d.created_at || "", last_seen: d.last_seen || "",
-          ...sub, trial_until: d.trial_until || "", paid_until: d.paid_until || "", paid_claim_at: d.paid_claim_at || "", note: d.admin_note || "",
+          ...sub, trial_until: d.trial_until || "", paid_until: d.paid_until || "", paid_claim_at: d.paid_claim_at || "", paid_claim: (() => { try { return JSON.parse(d.paid_claim || "null"); } catch { return null; } })(), note: d.admin_note || "",
           clients: cl.filter((c) => c.tid === T.id && !c.archived).length, sessions_30d: ss.filter((x) => x.tid === T.id && x.status !== "cancelled").length };
       }).sort((a, z) => (z.created_at || "").localeCompare(a.created_at || "")) };
     },
@@ -742,10 +750,20 @@ export function createCore(st, opts = {}) {
       }
       if (b.paid_until !== undefined) { if (b.paid_until && !isDay(b.paid_until)) throw new ApiError("Невірна дата"); d.paid_until = b.paid_until || ""; d.warned = ""; }
       if (b.trial_until !== undefined) { if (b.trial_until && !isDay(b.trial_until)) throw new ApiError("Невірна дата"); d.trial_until = b.trial_until || ""; d.warned = ""; }
+      if (b.plan !== undefined) d.plan = b.plan === "pro" ? "pro" : "basic";
+      if (b.confirm_claim) {
+        let c = {}; try { c = JSON.parse(d.paid_claim || "{}"); } catch { /* */ }
+        if (!c.months) throw new ApiError("Немає заявки на оплату");
+        d.plan = c.plan === "pro" ? "pro" : "basic";
+        const base = [d.paid_until, today].filter(Boolean).sort().pop();
+        d.paid_until = addDays(base, 30 * c.months); d.paid_claim = ""; d.paid_claim_at = ""; d.warned = "";
+      }
+      if (b.reject_claim) { d.paid_claim = ""; d.paid_claim_at = ""; }
       if (b.blocked !== undefined) d.blocked = b.blocked ? "1" : "";
       if (b.note !== undefined) d.admin_note = String(b.note).slice(0, 500);
       await saveTenant(T);
-      if (b.extend_days && d.trainer_chat_id) await send(d.trainer_chat_id, `✅ Підписку продовжено до <b>${fmtDay(d.paid_until)} ${d.paid_until.slice(0, 4)}</b>. Дякуємо!`);
+      if ((b.extend_days || b.confirm_claim) && d.trainer_chat_id) await send(d.trainer_chat_id, `✅ Оплату підтверджено. Тариф <b>${d.plan === "pro" ? "Pro" : "Звичайний"}</b> діє до <b>${fmtDay(d.paid_until)} ${d.paid_until.slice(0, 4)}</b>. Дякуємо!`);
+      if (b.reject_claim && d.trainer_chat_id) await send(d.trainer_chat_id, "⚠️ Оплату поки не знайдено. Перевірте переказ або напишіть у підтримку.");
       return { tenant: { tid: T.id, ...subInfo(d), paid_until: d.paid_until || "", trial_until: d.trial_until || "" } };
     },
     async admin_impersonate(b) {
@@ -775,6 +793,9 @@ export function createCore(st, opts = {}) {
     async admin_billing_save(b) {
       if (b.price_text != null) await kvSet("price_text", String(b.price_text).slice(0, 200));
       if (b.pay_info != null) await kvSet("pay_info", String(b.pay_info).slice(0, 1000));
+      if (b.price_basic != null) await kvSet("price_basic", String(Math.max(0, Math.round(Number(b.price_basic) || 0))));
+      if (b.price_pro != null) await kvSet("price_pro", String(Math.max(0, Math.round(Number(b.price_pro) || 0))));
+      if (b.mono_url != null) { const u = String(b.mono_url).trim(); if (u && !/^https:\/\/(send\.monobank\.ua|monobank\.ua)\/[\w/-]+/.test(u)) throw new ApiError("Посилання має бути на send.monobank.ua"); await kvSet("mono_url", u); }
       if (b.trial_days != null) await kvSet("trial_days", String(Math.max(0, Math.min(90, Math.round(Number(b.trial_days) || 0)))));
       return {};
     },
@@ -824,7 +845,7 @@ export function createCore(st, opts = {}) {
   async function publicAction(action, b, ctx) {
     if (!["status", "setup", "register", "login", "forgot", "reset"].includes(action)) return undefined;
     const g = await settings(true);
-    if (action === "status") return { needs_setup: false, multi: true, trainer_name: "", price_text: g.price_text || "", trial_days: Number(g.trial_days || 14) };
+    if (action === "status") return { needs_setup: false, multi: true, trainer_name: "", price_basic: Number(g.price_basic) || 0, price_pro: Number(g.price_pro) || 0, trial_days: Number(g.trial_days || 14) };
     const ipT = await throttleCheck("ip", ctx.ip || "?", 20, 15);
     const appUrl = b._app && /^https:\/\/[\w.-]+(:\d+)?\/[\w./-]*$/.test(b._app) ? b._app.split("#")[0] : "";
     if (action === "setup" || action === "register") {
@@ -882,6 +903,7 @@ export function createCore(st, opts = {}) {
   }
 
   // Дії, дозволені, коли підписка закінчилась (лише перегляд і обслуговування)
+  const PRO_ONLY = new Set(["tg_link_client", "backup_now"]);
   const READ_OK = new Set(["bootstrap", "range", "plans_range", "client_history", "expenses_range", "export", "backup_now", "settings_save", "credentials_save",
     "tg_link_trainer", "tg_unlink_trainer", "sub_paid", "bot_connect"]);
   async function api(body, headers, ctx = {}) {
@@ -903,6 +925,7 @@ export function createCore(st, opts = {}) {
       const sub = subInfo(T.data);
       if (!sub.writable && !READ_OK.has(action))
         return [402, { ok: false, error: sub.state === "blocked" ? "Кабінет призупинено. Звʼяжіться з підтримкою." : "Підписка закінчилась — дані доступні для перегляду. Продовжте її в «Ще» → «Підписка».", reason: "subscription" }];
+      if (PRO_ONLY.has(action) && !sub.pro) return [402, { ok: false, error: PRO_MSG, reason: "pro" }];
       return [200, { ok: true, ...(await inTenant(T, () => fn(body, ctx))) }];
     } catch (e) {
       if (e instanceof ApiError) return [400, { ok: false, error: e.message }];
@@ -1140,7 +1163,7 @@ export function createCore(st, opts = {}) {
       const pay = g.pay_info ? `\n\n${esc(g.pay_info)}` : "";
       if (sub.writable && sub.days_left <= 3 && s.warned !== "3:" + sub.until) {
         await tSet("warned", "3:" + sub.until);
-        await send(s.trainer_chat_id, `⏳ Підписка діє до <b>${fmtDay(sub.until)}</b> (${sub.days_left === 0 ? "останній день" : `ще ${sub.days_left} дн.`}).${g.price_text ? `\nВартість: ${esc(g.price_text)}` : ""}${pay}\n\nПісля оплати натисніть у додатку «Ще» → «Підписка» → «Я оплатив».`);
+        await send(s.trainer_chat_id, `⏳ ${sub.state === "trial" ? "Пробний період" : "Підписка"} діє до <b>${fmtDay(sub.until)}</b> (${sub.days_left === 0 ? "останній день" : `ще ${sub.days_left} дн.`}).${g.price_basic || g.price_pro ? `\nЗвичайний — ${g.price_basic} грн/міс, Pro — ${g.price_pro} грн/міс.` : ""}\n\nОплатити: у додатку «Ще» → «Підписка».`);
         out.push(`warn ${T.id}`);
       }
       if (sub.state === "expired" && s.warned !== "0:" + sub.until) {
@@ -1149,7 +1172,7 @@ export function createCore(st, opts = {}) {
         out.push(`expired ${T.id}`);
       }
     }
-    if (!sub.writable) return; // нагадування й дайджести — лише з активною підпискою
+    if (!sub.pro) return; // нагадування, дайджести й бекап — тариф Pro (і пробний період)
     const before = Number(s.remind_before_min || 0);
     if (before > 0) {
       for (const day of [L.day, addDays(L.day, 1)]) {

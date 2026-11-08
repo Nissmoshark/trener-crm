@@ -484,7 +484,22 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
     assert.equal(list.length, 2);
     const ol = list.find((x) => x.name === "Олена"); assert.equal(ol.state, "expired"); assert.ok(ol.paid_claim_at);
     await OK("admin_tenant_update", { tid: ol.tid, extend_days: 30 }, AT);
-    assert.equal((await OK("bootstrap", {}, T2)).subscription.state, "active");
+    let sb = (await OK("bootstrap", {}, T2)).subscription;
+    assert.equal(sb.state, "active"); assert.equal(sb.plan, "basic"); assert.equal(sb.pro, false);
+    // Звичайний тариф: без бота для клієнтів
+    const pr = await A("tg_link_client", { id: c2.id }, T2); assert.equal(pr.code, 402); assert.match(pr.error, /Pro/);
+    // заявка на Pro через monobank → адмін підтверджує
+    await OK("admin_billing_save", { price_basic: 199, price_pro: 349, mono_url: "https://send.monobank.ua/jar/abc123" }, AT);
+    await BAD("admin_billing_save", { mono_url: "https://evil.example/x" }, AT, /monobank/);
+    sb = (await OK("bootstrap", {}, T2)).subscription; assert.equal(sb.price_pro, 349); assert.equal(sb.mono_url, "https://send.monobank.ua/jar/abc123");
+    await OK("sub_paid", { plan: "pro", months: 3, amount: 1047 }, T2);
+    const cl2 = (await OK("admin_tenants", {}, AT)).tenants.find((x) => x.tid === ol.tid);
+    assert.deepEqual([cl2.paid_claim.plan, cl2.paid_claim.months], ["pro", 3]);
+    const before = cl2.paid_until;
+    await OK("admin_tenant_update", { tid: ol.tid, confirm_claim: true }, AT);
+    sb = (await OK("bootstrap", {}, T2)).subscription;
+    assert.equal(sb.plan, "pro"); assert.equal(sb.pro, true); assert.ok(sb.until > before); assert.equal(sb.paid_claim, "");
+    await BAD("admin_tenant_update", { tid: ol.tid, confirm_claim: true }, AT, /Немає заявки/);
     await OK("client_save", { client: { name: "Новий" } }, T2);
     await OK("admin_tenant_update", { tid: ol.tid, blocked: true }, AT);
     assert.match((await A("client_save", { client: { name: "x" } }, T2)).error, /призупинено/);

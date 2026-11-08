@@ -18,9 +18,10 @@ export default async ({ req, res, log, error }) => {
     const st = appwriteStore({ endpoint: process.env.APPWRITE_FUNCTION_API_ENDPOINT, project: process.env.APPWRITE_FUNCTION_PROJECT_ID, key });
     if (!schemaOk) { await st.ensureSchema(log); schemaOk = true; }
     if (core) core.swapStore(st);
-    else core = createCore(st, { log: (m) => error(m), publicUrl: process.env.PUBLIC_URL || "" });
+    else core = createCore(st, { log: (m) => error(m), publicUrl: process.env.PUBLIC_URL || "", botToken: (process.env.TELEGRAM_BOT_TOKEN || "").trim() });
     storeKey = key;
   }
+  await core.ensureBot();
   const trig = req.headers["x-appwrite-trigger"];
   if (trig === "schedule") { const r = await core.tick(); if (r.length) log(r.join(", ")); return res.json({ ok: true, done: r }); }
   // зовнішній «будильник» (напр. cron-job.org щохвилини): GET ?tick=<secret>

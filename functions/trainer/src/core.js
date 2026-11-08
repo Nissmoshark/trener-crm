@@ -161,6 +161,34 @@ export function createCore(st, opts = {}) {
     for (const p of await partsFor([["session_id", "eq", sessionId]])) await st.update("parts", p.id, patch);
   }
 
+  // Підключити бота: webhook, команди, імʼя. Токен лише на сервері.
+  async function connectBot(tok, base) {
+    if (!/^\d{5,}:[\w-]{30,}$/.test(tok)) throw new ApiError("Це не схоже на токен бота від @BotFather");
+    const me = await tg("getMe", {}, tok);
+    if (!me?.ok) throw new ApiError("Telegram не прийняв токен — перевірте його");
+    const s = await settings(true);
+    if (!base) throw new ApiError("Невідома адреса сервера");
+    const wh = await tg("setWebhook", { url: `${base}/?tg=1`, secret_token: s.secret, drop_pending_updates: true, allowed_updates: ["message"] }, tok);
+    if (!wh?.ok) throw new ApiError("Не вдалося підключити бота: " + (wh?.description ?? ""));
+    await tg("setMyCommands", { commands: [
+      { command: "today", description: "План на сьогодні" }, { command: "tomorrow", description: "План на завтра" },
+      { command: "week", description: "Тиждень" }, { command: "debts", description: "Борги клієнтів" }] }, tok);
+    await kvSet("bot_token", tok);
+    await kvSet("bot_username", me.result.username);
+    if (s.bot_username && s.bot_username !== me.result.username) await kvSet("trainer_chat_id", "");
+    return { bot_username: me.result.username };
+  }
+  // Вбудований бот (змінна оточення): підключається сам при першому запуску
+  let botChecked = false;
+  async function ensureBot() {
+    if (botChecked || !opts.botToken || !opts.publicUrl) return;
+    botChecked = true;
+    const s = await settings(true);
+    if (s.bot_token === opts.botToken && s.bot_username && s.bot_url === opts.publicUrl) return;
+    try { await connectBot(opts.botToken, opts.publicUrl); await kvSet("bot_url", opts.publicUrl); log("bot connected"); }
+    catch (e) { botChecked = false; log("bot connect failed: " + e.message); }
+  }
+
   // ───────── API ─────────
   const actions = {
     async bootstrap() {
@@ -180,7 +208,7 @@ export function createCore(st, opts = {}) {
         settings: {
           remind_before_min: +(s.remind_before_min || 0), digest_morning: s.digest_morning || "", digest_evening: s.digest_evening || "",
           trainer_name: s.trainer_name || "", bot_username: s.bot_username || "", tg_linked: !!s.trainer_chat_id,
-          phone_hint: maskPhone(s.trainer_phone), bot_ready: !!s.bot_token,
+          phone_hint: maskPhone(s.trainer_phone), bot_ready: !!s.bot_token, bot_managed: !!opts.botToken,
         },
       };
     },
@@ -349,22 +377,8 @@ export function createCore(st, opts = {}) {
       return { token: await makeToken() };
     },
     async bot_connect(b, ctx) {
-      const tok = String(b.token ?? "").trim();
-      if (!/^\d{5,}:[\w-]{30,}$/.test(tok)) throw new ApiError("Це не схоже на токен бота від @BotFather");
-      const me = await tg("getMe", {}, tok);
-      if (!me?.ok) throw new ApiError("Telegram не прийняв токен — перевірте його");
-      const s = await settings(true);
-      const base = opts.publicUrl || ctx.baseUrl;
-      if (!base) throw new ApiError("Невідома адреса сервера");
-      const wh = await tg("setWebhook", { url: `${base}/?tg=1`, secret_token: s.secret, drop_pending_updates: true, allowed_updates: ["message"] }, tok);
-      if (!wh?.ok) throw new ApiError("Не вдалося підключити бота: " + (wh?.description ?? ""));
-      await tg("setMyCommands", { commands: [
-        { command: "today", description: "План на сьогодні" }, { command: "tomorrow", description: "План на завтра" },
-        { command: "week", description: "Тиждень" }, { command: "debts", description: "Борги клієнтів" }] }, tok);
-      await kvSet("bot_token", tok);
-      await kvSet("bot_username", me.result.username);
-      if (s.bot_username && s.bot_username !== me.result.username) await kvSet("trainer_chat_id", "");
-      return { bot_username: me.result.username };
+      if (opts.botToken) throw new ApiError("Бот уже вбудовано в додаток");
+      return await connectBot(String(b.token ?? "").trim(), opts.publicUrl || ctx.baseUrl);
     },
     async tg_link_trainer() {
       const s = await settings(true);
@@ -628,5 +642,5 @@ export function createCore(st, opts = {}) {
     return out;
   }
 
-  return { api, onUpdate, tick, settings, setClock: (f) => { nowMs = f; }, swapStore: (x) => { st = x; }, normPhone, local, sleep };
+  return { api, onUpdate, tick, settings, ensureBot, setClock: (f) => { nowMs = f; }, swapStore: (x) => { st = x; }, normPhone, local, sleep };
 }

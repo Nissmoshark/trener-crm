@@ -612,13 +612,20 @@
     botSheet() {
       const s = st.settings;
       if (DEMO) { toast("Telegram-бот працює в робочій версії"); return; }
-      openSheet(`<h2>Telegram-бот<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
-        ${s.bot_ready ? `<div class="card" style="margin:0 0 12px"><b>@${esc(s.bot_username)}</b><div style="font-size:14px;color:var(--muted);margin-top:4px">${s.tg_linked ? "✅ Ваш Telegram підключено: щоранку план, увечері підсумок, команди /today /tomorrow /week /debts." : "Підключіть свій Telegram — бот попросить підтвердити ваш номер телефону."}</div></div>
+      const tokenForm = `<label class="field" style="margin-top:10px"><span>Токен бота</span><input id="bot-token" autocomplete="off" placeholder="123456789:AA…"></label>
+        <button class="btn ${s.bot_ready ? "light" : "blue"} wide" data-act="botConnect">Підключити бота</button>`;
+      let body;
+      if (s.bot_ready) {
+        body = `<div class="card" style="margin:0 0 12px"><b>@${esc(s.bot_username)}</b><div style="font-size:14px;color:var(--muted);margin-top:4px">${s.tg_linked ? "✅ Ваш Telegram підключено: щоранку план, увечері підсумок, команди /today /tomorrow /week /debts." : "Натисніть кнопку нижче, у Telegram — «Старт», потім «Надіслати мій номер». Номер має збігатися з номером входу."}</div></div>
           <button class="btn blue wide" data-act="tgTrainer">${s.tg_linked ? "Підключити інший пристрій" : "Підключити мій Telegram"}</button>
           ${s.tg_linked ? '<button class="btn light wide" style="margin-top:8px" data-act="tgUnlink">Відʼєднати мій Telegram</button>' : ""}
-          <details style="margin-top:16px"><summary style="cursor:pointer;color:var(--muted);font-size:14px">Замінити бота</summary>` : `<p style="font-size:14px;color:var(--muted);margin:0 0 12px">1. Відкрийте <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> → /newbot → придумайте імʼя.<br>2. Скопіюйте токен, який він надішле, і вставте сюди. Токен зберігається лише на сервері.</p>`}
-        <label class="field" style="margin-top:10px"><span>Токен бота</span><input id="bot-token" autocomplete="off" placeholder="123456789:AA…"></label>
-        <button class="btn ${s.bot_ready ? "light" : "blue"} wide" data-act="botConnect">Підключити бота</button>${s.bot_ready ? "</details>" : ""}`);
+          ${s.bot_managed ? "" : `<details style="margin-top:16px"><summary style="cursor:pointer;color:var(--muted);font-size:14px">Замінити бота</summary>${tokenForm}</details>`}`;
+      } else if (s.bot_managed) {
+        body = `<p style="font-size:14px;color:var(--muted)">Бот підключається… Спробуйте за хвилину.</p>`;
+      } else {
+        body = `<p style="font-size:14px;color:var(--muted);margin:0 0 12px">1. Відкрийте <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> → /newbot → придумайте імʼя.<br>2. Скопіюйте токен, який він надішле, і вставте сюди. Токен зберігається лише на сервері.</p>${tokenForm}`;
+      }
+      openSheet(`<h2>Telegram-бот<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>${body}`);
     },
     async botConnect() {
       const v = $("#bot-token").value.trim(); if (!v) return toast("Вставте токен", true);

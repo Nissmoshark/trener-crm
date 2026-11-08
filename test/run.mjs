@@ -227,5 +227,21 @@ await ok("credentials_save", { old: "Another2026", phone: "0631234567" }, tok3).
 });
 await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_before_min: 60, digest_morning: "07:30", digest_evening: "" } }, (await ok("login", { phone: "0631234567", password: "Another2026" })).token);
 
+// ── Вбудований бот (токен у змінній оточення) ──
+{
+  const st2 = memStore(), calls = [];
+  const tf = async (url, init) => { calls.push(url.split("/").pop()); return { json: async () => ({ ok: true, result: { username: "built_in_bot" } }) }; };
+  const c2 = createCore(st2, { now: () => clock, tgFetch: tf, iterations: 1000, publicUrl: "https://fn.test", botToken: "999999:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh" });
+  await c2.ensureBot(); await c2.ensureBot();
+  assert.equal(calls.filter((x) => x === "setWebhook").length, 1, "webhook once");
+  const t2 = (await c2.api({ action: "setup", phone: "0501234567", password: "Trener2026" }, {}, { ip: "2" }))[1].token;
+  const bs = (await c2.api({ action: "bootstrap" }, { authorization: "Bearer " + t2 }, {}))[1].settings;
+  assert.equal(bs.bot_managed, true); assert.equal(bs.bot_ready, true); assert.equal(bs.bot_username, "built_in_bot");
+  const r2 = (await c2.api({ action: "bot_connect", token: "1:x" }, { authorization: "Bearer " + t2 }, {}))[1];
+  assert.match(r2.error, /вбудовано/);
+  assert.match((await c2.api({ action: "tg_link_trainer" }, { authorization: "Bearer " + t2 }, {}))[1].url, /built_in_bot\?start=t_/);
+  n += 4;
+}
+
 function addD(d, k) { const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + k); return x.toISOString().slice(0, 10); }
 console.log(`OK — ${n} перевірок API + бот і нагадування`);

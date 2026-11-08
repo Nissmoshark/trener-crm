@@ -153,6 +153,11 @@ assert.equal((await ok("bootstrap", {}, tok)).settings.tg_linked, false);
 await msg(555, { text: "/start " + code });
 await msg(555, { contact: { phone_number: "+380501234567", user_id: 1 } });
 assert.match(sent.at(-1).text, /саме свій номер/);
+// зміна лише номера Telegram не виводить інші пристрої
+{ const before = tok; const j = await ok("credentials_save", { old: "Trener2026", tg_phone: "0991112233" }, tok); await ok("bootstrap", {}, before); tok = j.token;
+  await ok("credentials_save", { old: "Trener2026", tg_phone: "-" }, tok);
+  await bad("credentials_save", { old: "Trener2026", phone: "0631111111", new: "short" }, tok, /8 символів/);
+  assert.match((await ok("bootstrap", {}, tok)).settings.phone_hint, /45 67/, "phone not changed on failed save"); }
 // повідомлення показує обидва номери (замасковані)
 await msg(777, { text: "/start " + code });
 await msg(777, { contact: { phone_number: "+380991112233", user_id: 777 } });
@@ -236,7 +241,7 @@ assert.match(sent.at(-1).text, /Підсумок дня/);
 
 // ── Забув пароль ──
 sent.length = 0;
-await ok("forgot", { phone: "0501234567" });
+await ok("forgot", { phone: "0501234567", _app: "https://evil.example/" }); // підміна адреси не спрацює
 const rl = sent.at(-1).text.match(/#reset=([\w-]+)/);
 assert.ok(rl && sent.at(-1).text.includes("https://trener.appwrite.network/#reset="));
 await bad("reset", { code: "nope", password: "NewPass2026" }, null, /недійсне/);

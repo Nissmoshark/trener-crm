@@ -392,25 +392,22 @@ export function createCore(st, opts = {}) {
       const t = await throttleCheck("pw", "trainer", 5, 15);
       if (!(await passOk(b.old, s.pass_salt, s.pass_hash))) { await throttleFail(t); throw new ApiError("Невірний поточний пароль"); }
       await throttleClear(t);
-      if (b.phone != null && b.phone !== "") {
-        const ph = normPhone(b.phone);
-        if (!ph) throw new ApiError("Невірний номер телефону");
-        if (ph !== s.trainer_phone) { await kvSet("trainer_phone", ph); await kvSet("trainer_chat_id", ""); }
-      }
-      // окремий номер Telegram (якщо Telegram зареєстровано на інший номер); "-" — прибрати
-      if (b.tg_phone === "-") await kvSet("trainer_tg_phone", "");
-      else if (b.tg_phone != null && b.tg_phone !== "") {
-        const tp = normPhone(b.tg_phone);
-        if (!tp) throw new ApiError("Невірний номер Telegram");
-        if (tp !== s.trainer_tg_phone) { await kvSet("trainer_tg_phone", tp); }
-      }
-      if (b.new) {
-        const p = checkPassword(b.new);
+      // спершу перевіряємо все, щоб не зберегти половину
+      const ph = b.phone != null && b.phone !== "" ? normPhone(b.phone) : null;
+      if (ph === "") throw new ApiError("Невірний номер телефону");
+      const tp = b.tg_phone === "-" ? "" : b.tg_phone != null && b.tg_phone !== "" ? normPhone(b.tg_phone) : null;
+      if (tp === "" && b.tg_phone !== "-") throw new ApiError("Невірний номер Telegram");
+      const np = b.new ? checkPassword(b.new) : null;
+      let logoutOthers = false;
+      if (ph && ph !== s.trainer_phone) { await kvSet("trainer_phone", ph); await kvSet("trainer_chat_id", ""); logoutOthers = true; }
+      if (tp != null && tp !== (s.trainer_tg_phone || "")) await kvSet("trainer_tg_phone", tp);
+      if (np) {
         const salt = randCode(12);
         await kvSet("pass_salt", salt);
-        await kvSet("pass_hash", await passHash(p, salt));
+        await kvSet("pass_hash", await passHash(np, salt));
+        logoutOthers = true;
       }
-      await kvSet("pass_ver", String(Number(s.pass_ver || 1) + 1)); // інші пристрої вийдуть
+      if (logoutOthers) await kvSet("pass_ver", String(Number(s.pass_ver || 1) + 1)); // інші пристрої вийдуть
       await settings(true);
       return { token: await makeToken() };
     },
@@ -451,7 +448,8 @@ export function createCore(st, opts = {}) {
     const s = await settings(true);
     if (action === "status") return { needs_setup: !s.pass_hash, trainer_name: s.trainer_name || "" };
     const ipT = await throttleCheck("ip", ctx.ip || "?", 20, 15);
-    if (b._app && /^https:\/\/[\w.-]+(:\d+)?\/[\w./-]*$/.test(b._app)) await kvSet("app_url", b._app.split("#")[0]);
+    // адресу додатку запамʼятовуємо лише після успішного входу — інакше хтось міг би підмінити посилання для скидання пароля
+    const rememberApp = async () => { if (!opts.appUrl && b._app && /^https:\/\/[\w.-]+(:\d+)?\/[\w./-]*$/.test(b._app)) await kvSet("app_url", b._app.split("#")[0]); };
     if (action === "setup") {
       if (s.pass_hash) throw new ApiError("Обліковий запис уже створено");
       const phone = normPhone(b.phone);
@@ -463,6 +461,7 @@ export function createCore(st, opts = {}) {
       await kvSet("pass_salt", salt);
       await kvSet("pass_hash", await passHash(p, salt));
       await kvSet("pass_ver", "1");
+      await rememberApp();
       await settings(true);
       return { token: await makeToken() };
     }
@@ -471,6 +470,7 @@ export function createCore(st, opts = {}) {
       const pt = await throttleCheck("ph", phone || "-", 5, 15);
       if (phone && phone === s.trainer_phone && (await passOk(b.password, s.pass_salt, s.pass_hash))) {
         await throttleClear(pt);
+        await rememberApp();
         return { token: await makeToken() };
       }
       await throttleFail(pt); await throttleFail(ipT);
@@ -484,7 +484,7 @@ export function createCore(st, opts = {}) {
         const code = randCode(18);
         await kvSet("reset_hash", await sha(code));
         await kvSet("reset_at", String(nowMs()));
-        const url = `${s.app_url || ""}#reset=${code}`;
+        const url = `${opts.appUrl || s.app_url || ""}#reset=${code}`;
         await send(s.trainer_chat_id, `🔑 Посилання для нового пароля (діє 30 хв):\n${url}\n\nЯкщо це не ви — просто проігноруйте.`);
       }
       return { sent: true }; // однакова відповідь, щоб не підбирали номери
@@ -651,6 +651,8 @@ export function createCore(st, opts = {}) {
   }
 
   // ───────── Щохвилини ─────────
+  // Сервер «прокидається» раз на годину (безкоштовний тариф), тож беремо події наперед, щоб не пропустити
+  const SLACK = Number(opts.tickSlackMin ?? 0);
   async function tick() {
     const s = await settings(true);
     const L = local(), out = [];
@@ -661,7 +663,7 @@ export function createCore(st, opts = {}) {
         for (const x of ss) {
           if (x.status !== "planned" || x.reminded) continue;
           const diff = toMin(x.start_time) + (day === L.day ? 0 : 1440) - L.min;
-          if (diff <= 0 || diff > before) continue;
+          if (diff <= 0 || diff > before + SLACK) continue;
           await st.update("sessions", x.id, { reminded: true });
           const when = day === L.day ? "сьогодні" : "завтра";
           const coach = s.trainer_name ? ` у ${esc(s.trainer_name)}` : "";
@@ -676,7 +678,7 @@ export function createCore(st, opts = {}) {
         for (const p of await all("plans", [["day", "eq", day]])) {
           if (!p.time || p.done || p.reminded || !(p.remind_min > 0)) continue;
           const diff = toMin(p.time) + (day === L.day ? 0 : 1440) - L.min;
-          if (diff <= 0 || diff > p.remind_min) continue;
+          if (diff <= 0 || diff > p.remind_min + SLACK) continue;
           await st.update("plans", p.id, { reminded: true });
           await send(s.trainer_chat_id, `🔔 <b>${day === L.day ? "Сьогодні" : "Завтра"} о ${p.time}</b> — ${esc(p.title)}${p.place ? `\n📍 ${esc(p.place)}` : ""}${p.note ? `\n${esc(p.note)}` : ""}`);
           out.push(`plan ${p.id}`);

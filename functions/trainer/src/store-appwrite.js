@@ -114,6 +114,14 @@ export function appwriteStore({ endpoint, project, key, fetchImpl = fetch }) {
     },
     // Створити базу й колекції, якщо їх ще немає
     async ensureSchema(log = () => {}) {
+      // швидкий шлях: схема вже актуальна
+      const ver = String(Object.keys(SCHEMA).length) + ":" + Object.values(SCHEMA).reduce((n, d) => n + d.attrs.length + d.indexes.length, 0);
+      try { if ((await req("GET", `${cpath("kv")}/rows/schema_ver`))?.value === ver) return; } catch { /* перевіримо повністю */ }
+      await this.ensureSchemaFull(log);
+      try { await req("POST", `${cpath("kv")}/rows`, { rowId: "schema_ver", data: { value: ver } }); }
+      catch (e) { try { if (e.status === 409) await req("PATCH", `${cpath("kv")}/rows/schema_ver`, { data: { value: ver } }); } catch { /* наступного разу */ } }
+    },
+    async ensureSchemaFull(log = () => {}) {
       try { await req("GET", `/tablesdb/${DB}`); }
       catch (e) { if (e.status !== 404) throw e; await req("POST", "/tablesdb", { databaseId: DB, name: "Тренування" }); log("db created"); }
       const pendingIdx = [];

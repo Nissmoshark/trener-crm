@@ -18,7 +18,7 @@ export default async ({ req, res, log, error }) => {
     const st = appwriteStore({ endpoint: process.env.APPWRITE_FUNCTION_API_ENDPOINT, project: process.env.APPWRITE_FUNCTION_PROJECT_ID, key });
     if (!schemaOk) { await st.ensureSchema(log); schemaOk = true; }
     if (core) core.swapStore(st);
-    else core = createCore(st, { log: (m) => error(m), publicUrl: process.env.PUBLIC_URL || "", botToken: (process.env.TELEGRAM_BOT_TOKEN || "").trim() });
+    else core = createCore(st, { log: (m) => error(m), publicUrl: process.env.PUBLIC_URL || "", botToken: (process.env.TELEGRAM_BOT_TOKEN || "").trim(), appUrl: process.env.APP_URL || "", tickSlackMin: Number(process.env.TICK_SLACK_MIN ?? 59) });
     storeKey = key;
   }
   await core.ensureBot();

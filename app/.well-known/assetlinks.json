@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "network.appwrite.trener_zhurnal.twa",
+      "sha256_cert_fingerprints": [
+        "30:64:B3:66:20:0A:A1:5F:4B:AB:7E:C8:D6:1A:0E:18:43:5E:CF:B6:7D:9F:24:05:54:57:03:F8:E9:E9:8D:8C"
+      ]
+    }
+  }
+]

@@ -6,7 +6,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 const TZ = "Europe/Kyiv";
 const DATA_TABLES = ["clients", "packages", "sessions", "parts", "moves", "plans", "expenses", "measures"];
 // Службові ключі kv, які не є глобальними налаштуваннями
-const KV_PRIVATE = ["f_", "p_", "tc_", "rs_", "ac_"];
+const KV_PRIVATE = ["f_", "p_", "tc_", "rs_", "ac_", "rc_"];
 const isPriv = (k) => KV_PRIVATE.some((x) => String(k).startsWith(x));
 // Одноразовий код для створення входу розробника (у коді — лише його хеш)
 const ADMIN_SETUP_HASH = "FiHtdyLO5HXp1XEg2o-wZfo4aAqOgvmOOhp0HmybZ7E";
@@ -408,6 +408,7 @@ export function createCore(st, opts = {}) {
           trainer_name: s.trainer_name || "", bot_username: s.bot_username || "", tg_linked: !!s.trainer_chat_id,
           phone_hint: maskPhone(s.trainer_phone), tg_phone_hint: maskPhone(s.trainer_tg_phone), bot_ready: !!s.bot_token, bot_managed: !!opts.botToken,
           gym_address: s.gym_address || "", month_goal: Number(s.month_goal) || 0, backup_weekly: s.backup_weekly !== "0", last_backup: s.last_backup || "",
+          report_time: s.report_time || "", report_admins: reportChats(s).map((x) => ({ chat: x.chat, name: x.name || "" })), last_report: s.last_report || "",
         },
         subscription: { ...subInfo(s), price_basic: Number(s.price_basic) || 0, price_pro: Number(s.price_pro) || 0, mono_url: s.mono_url || "",
           pay_info: s.pay_info || "", price_text: s.price_text || "", paid_claim_at: s.paid_claim_at || "", paid_claim: s.paid_claim || "" },
@@ -648,6 +649,7 @@ export function createCore(st, opts = {}) {
       if (v.gym_address != null) await tSet("gym_address", String(v.gym_address).trim().slice(0, 200));
       if (v.month_goal != null) await tSet("month_goal", String(Math.max(0, Math.round(Number(v.month_goal) || 0))));
       if (v.backup_weekly != null) await tSet("backup_weekly", v.backup_weekly ? "1" : "0");
+      if (/^\d{2}:\d{2}$/.test(v.report_time ?? "") || v.report_time === "") await tSet("report_time", v.report_time);
       await TS(true);
       return {};
     },
@@ -688,6 +690,30 @@ export function createCore(st, opts = {}) {
       return { url: `https://t.me/${s.bot_username}?start=t_${code}` };
     },
     async tg_unlink_trainer() { await tSet("trainer_chat_id", ""); return {}; },
+    // Звіт адміністратору: посилання для підключення, відключення, надіслати зараз
+    async report_link() {
+      const s = await TS(true);
+      if (!s.bot_username) throw new ApiError("Бот ще не налаштований");
+      if (reportChats(s).length >= 5) throw new ApiError("Підключено максимум адміністраторів (5)");
+      const code = randCode();
+      await kvSet("rc_" + code, JSON.stringify({ t: s.tid, at: nowMs() }));
+      return { url: `https://t.me/${s.bot_username}?start=r_${code}` };
+    },
+    async report_unlink(b) {
+      const s = await TS(true);
+      await tSet("report_chats", JSON.stringify(reportChats(s).filter((x) => String(x.chat) !== String(b.chat))));
+      return {};
+    },
+    async report_send_now(b) {
+      const s = await TS(true);
+      const chats = reportChats(s);
+      if (!chats.length) throw new ApiError("Спершу підключіть адміністратора");
+      const day = /^\d{4}-\d{2}-\d{2}$/.test(b.day || "") ? b.day : local().day;
+      const text = await dayReport(day, true);
+      let sent = 0;
+      for (const x of chats) { try { await send(x.chat, text); sent++; } catch (e) { await logError("report", e); } }
+      return { sent };
+    },
     async tg_link_client(b) {
       const s = await TS(true);
       if (!s.bot_username) throw new ApiError("Спершу підключіть бота в налаштуваннях");
@@ -995,9 +1021,9 @@ export function createCore(st, opts = {}) {
   }
 
   // Дії, дозволені, коли підписка закінчилась (лише перегляд і обслуговування)
-  const PRO_ONLY = new Set(["tg_link_client", "backup_now"]);
+  const PRO_ONLY = new Set(["tg_link_client", "backup_now", "report_link", "report_send_now"]);
   const READ_OK = new Set(["bootstrap", "range", "plans_range", "client_history", "expenses_range", "export", "backup_now", "settings_save", "credentials_save",
-    "tg_link_trainer", "tg_unlink_trainer", "sub_paid", "bot_connect"]);
+    "tg_link_trainer", "tg_unlink_trainer", "sub_paid", "bot_connect", "report_unlink"]);
   async function api(body, headers, ctx = {}) {
     const action = String(body?.action ?? "");
     try {
@@ -1091,6 +1117,31 @@ export function createCore(st, opts = {}) {
     L.push("", tm.length ? `Завтра: ${tm.length} трен., перше о ${tm[0].start_time}` : "Завтра тренувань немає");
     return L.join("\n");
   }
+  // Звіт адміністратору: хто тренувався й скільки (html — для бота, інакше простий текст)
+  function reportChats(s) { try { const a = JSON.parse(s.report_chats || "[]"); return Array.isArray(a) ? a : []; } catch { return []; } }
+  async function dayReport(day, html = false) {
+    const s = await TS();
+    const e = html ? esc : (x) => String(x ?? "");
+    const ok = (await sessionsRange(day, day)).filter((x) => x.status !== "cancelled");
+    const [y, m, d] = day.split("-");
+    const L = [`${html ? "📋 <b>" : "📋 "}Звіт за ${d}.${m}.${y}${s.trainer_name ? " · " + e(s.trainer_name) : ""}${html ? "</b>" : ""}`, ""];
+    let i = 0, pkg = 0, debt = 0;
+    for (const x of ok) {
+      const mark = (p) => [p.pay === "package" ? "абонемент" : "", p.pay === "debt" ? "борг" : "", x.status === "no_show" ? "не прийшов" : ""].filter(Boolean);
+      for (const p of x.participants) {
+        if (p.pay === "package") pkg += Number(p.price); if (p.pay === "debt") debt += Number(p.price);
+        const mk = mark(p);
+        L.push(`${++i}. ${x.start_time} ${e(p.name)} — ${Math.round(p.price)}${mk.length ? ` (${mk.join(", ")})` : ""}`);
+      }
+      if (Number(x.extra_amount) || !x.participants.length) L.push(`${++i}. ${x.start_time} ${e(x.title || "Група")}${x.participants.length ? " (без імен)" : ""} — ${Math.round(Number(x.extra_amount) || 0)}`);
+    }
+    if (!ok.length) L.push("Тренувань не було");
+    const people = new Set(ok.flatMap((x) => x.participants.map((p) => p.client_id))).size;
+    L.push("", `${html ? "💰 <b>" : "Разом: "}${html ? "Разом: " : ""}${money(ok.reduce((a, x) => a + sessTotal(x), 0))}${html ? "</b>" : ""} · ${ok.length} трен. · ${people} клієнт.`);
+    if (pkg) L.push(`з них з абонементів: ${money(pkg)}`);
+    if (debt) L.push(`борг: ${money(debt)}`);
+    return L.join("\n");
+  }
   async function clientChats(sessionId, withParts = false) {
     const ps = await partsFor([["session_id", "eq", sessionId]]);
     const cs = await all("clients", [["id", "in", ps.map((p) => p.client_id)]]);
@@ -1128,6 +1179,23 @@ export function createCore(st, opts = {}) {
         ? `✅ ${esc(c.name)} підтвердив(ла): ${fmtDay(sess.day)}, ${sess.start_time}`
         : `❌ <b>${esc(c.name)} не зможе</b>: ${fmtDay(sess.day)}, ${sess.start_time}\nПеренесіть або скасуйте тренування в журналі.`);
     });
+  }
+
+  async function linkReportChat(m, code) {
+    const chat = m.chat.id;
+    let v = null; try { v = JSON.parse((await kvGet("rc_" + code)) || "null"); } catch { /* */ }
+    const T = v && nowMs() - v.at < 7 * 86400000 ? await loadTenant(v.t) : null;
+    if (!T) return send(chat, "Посилання застаріло — попросіть тренера надіслати нове.", { reply_markup: NO_KB });
+    await kvDel("rc_" + code);
+    const list = reportChats(T.data).filter((x) => String(x.chat) !== String(chat));
+    const name = [m.from?.first_name, m.from?.last_name].filter(Boolean).join(" ") || (m.from?.username ? "@" + m.from.username : "адміністратор");
+    list.push({ chat: String(chat), name: name.slice(0, 60), at: nowMs() });
+    T.data.report_chats = JSON.stringify(list.slice(-5));
+    if (!T.data.report_time) T.data.report_time = "21:00";
+    await saveTenant(T);
+    const coach = T.data.trainer_name ? `тренера <b>${esc(T.data.trainer_name)}</b>` : "тренера";
+    if (T.data.trainer_chat_id && String(T.data.trainer_chat_id) !== String(chat)) await send(T.data.trainer_chat_id, `📋 ${esc(name)} тепер отримуватиме ваш щоденний звіт о ${T.data.report_time}`);
+    return send(chat, `✅ Готово! Сюди щодня о <b>${T.data.report_time}</b> приходитиме звіт ${coach}: клієнти й суми за день.`, { reply_markup: NO_KB });
   }
 
   async function onUpdate(u) {
@@ -1192,6 +1260,7 @@ export function createCore(st, opts = {}) {
         await kvDel("tc_" + arg.slice(2));
         return send(chat, "✅ Цей Telegram уже підключено до вашого журналу — нічого робити не треба.\n\nКоманди: /today /tomorrow /week /debts", { reply_markup: NO_KB });
       }
+      if (/^r_[\w-]{6,40}$/.test(arg)) return linkReportChat(m, arg.slice(2));
       if (/^[tca]_[\w-]{6,40}$/.test(arg)) {
         await kvSet(pendKey, `${arg[0]}:${arg.slice(2)}`);
         return send(chat, "Щоб підтвердити, що це ви, натисніть кнопку нижче — бот перевірить номер телефону.", { reply_markup: PHONE_KB });
@@ -1283,6 +1352,14 @@ export function createCore(st, opts = {}) {
           out.push(`remind ${x.id}`);
         }
       }
+    }
+    // щоденний звіт адміністратору
+    const rcs = reportChats(s);
+    if (s.report_time && rcs.length && L.hm >= s.report_time && s.last_report !== L.day) {
+      await tSet("last_report", L.day);
+      const text = await dayReport(L.day, true);
+      for (const x of rcs) { try { await send(x.chat, text); } catch (e) { await logError("report " + T.id, e); } }
+      out.push("report");
     }
     if (!s.trainer_chat_id) return;
     // нагадування тренеру про особисті плани

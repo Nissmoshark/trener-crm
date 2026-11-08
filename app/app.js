@@ -178,9 +178,33 @@
       <div class="price money">${num(sessTotal(s) || (s.status === "cancelled" ? s.participants.reduce((a, p) => a + p.price, 0) + Number(s.extra_amount) : 0))}</div>
     </button>`;
   }
+  // Звіт за день: простий текст для Telegram (такий самий надсилає бот)
+  function reportText(day, ss) {
+    const ok = ss.filter((x) => x.status !== "cancelled");
+    const [y, m, d] = day.split("-"), name = st.settings.trainer_name;
+    const L = [`📋 Звіт за ${d}.${m}.${y}${name ? " · " + name : ""}`, ""];
+    let i = 0, pkg = 0, debt = 0;
+    for (const x of ok) {
+      for (const p of x.participants) {
+        if (p.pay === "package") pkg += Number(p.price); if (p.pay === "debt") debt += Number(p.price);
+        const mk = [p.pay === "package" ? "абонемент" : "", p.pay === "debt" ? "борг" : "", x.status === "no_show" ? "не прийшов" : ""].filter(Boolean);
+        const c = clientById(p.client_id);
+        L.push(`${++i}. ${x.start_time} ${p.name || (c ? c.name : "?")} — ${Math.round(p.price)}${mk.length ? ` (${mk.join(", ")})` : ""}`);
+      }
+      if (Number(x.extra_amount) || !x.participants.length) L.push(`${++i}. ${x.start_time} ${x.title || "Група"}${x.participants.length ? " (без імен)" : ""} — ${Math.round(Number(x.extra_amount) || 0)}`);
+    }
+    if (!ok.length) L.push("Тренувань не було");
+    const people = new Set(ok.flatMap((x) => x.participants.map((p) => p.client_id))).size;
+    L.push("", `Разом: ${num(ok.reduce((a, x) => a + sessTotal(x), 0))} грн · ${ok.length} трен. · ${people} клієнт.`);
+    if (pkg) L.push(`з них з абонементів: ${num(pkg)} грн`);
+    if (debt) L.push(`борг: ${num(debt)} грн`);
+    return L.join("\n");
+  }
   function dayView(ss) {
     if (!ss.length) return `${totalBlock(ss, "за день")}<div class="empty"><b>День вільний</b>Натисніть «Тренування», щоб записати клієнта.</div>`;
-    return `${totalBlock(ss, "за день")}<div class="day-list">${ss.map(sessCard).join("")}</div>`;
+    st.daySessions = ss;
+    return `${totalBlock(ss, "за день")}<div class="day-list">${ss.map(sessCard).join("")}</div>
+      <button class="btn light wide report-btn" data-act="dayReport">📋 Звіт за день адміністратору</button>`;
   }
   function weekView(ss) {
     const f = weekStart(st.date);
@@ -678,6 +702,7 @@
       </div>
       <div class="card">
         <button class="list-btn" data-act="botSheet"><span>Telegram-бот<small>${!s.bot_ready && !DEMO ? "Ще не підключено — натисніть, щоб налаштувати" : s.tg_linked ? "@" + esc(s.bot_username) + " · план і підсумок дня приходять вам" : "@" + esc(s.bot_username || "бот") + " · підключіть свій Telegram"}</small></span>${ICON.right}</button>
+        <button class="list-btn" data-act="reportSheet"><span>Звіт адміністратору<small>${(s.report_admins || []).length ? `щодня о ${esc(s.report_time || "21:00")} · ${(s.report_admins || []).map((a) => esc(a.name)).join(", ")}` : "Список клієнтів і сум за день — в Telegram адміністратору"}</small></span>${ICON.right}</button>
         <button class="list-btn" data-act="changePin"><span>Мій вхід<small>${s.phone_hint ? esc(s.phone_hint) + " · " : ""}змінити номер чи пароль</small></span>${ICON.right}</button>
         <button class="list-btn" data-act="backupNow"><span>Резервна копія в Telegram<small>${s.last_backup ? "Остання: " + dLong(s.last_backup.slice(0, 10)) : "Файл з усіма даними — у ваш бот"}${s.backup_weekly ? " · щонеділі автоматично" : ""}</small></span>${ICON.right}</button>
         <label class="toggle" style="padding:10px 0"><input type="checkbox" id="s-backup" ${s.backup_weekly ? "checked" : ""} data-act="toggleBackup"> Щотижнева копія (неділя ввечері)</label>
@@ -877,6 +902,63 @@
         <div class="foot"><button class="btn blue" data-act="saveGoal">Зберегти</button></div>`, (bg) => $("#g-goal", bg).focus());
     },
     async saveGoal() { await must("settings_save", { settings: { month_goal: +$("#g-goal").value || 0 } }); closeSheet(); await refreshBase(); toast("Ціль збережено"); render(); },
+    dayReport() {
+      const text = reportText(st.date, st.daySessions || []);
+      const s = st.settings, admins = s.report_admins || [];
+      const auto = admins.length ? `<p class="hint">🤖 Автоматично бот надішле звіт о ${esc(s.report_time || "21:00")}: ${admins.map((a) => esc(a.name)).join(", ")}. Вручну надсилати не обовʼязково.</p>` : "";
+      openSheet(`<h2>Звіт за ${dLong(st.date)}<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+        <pre class="report-pre">${esc(text)}</pre>${auto}
+        <div class="foot col"><button class="btn blue" data-act="reportTg">Надіслати в Telegram</button><button class="btn light" data-act="reportShare">Інший застосунок або скопіювати</button>
+        ${admins.length ? `<button class="btn light" data-act="reportBotNow">Надіслати ботом адміністратору зараз</button>` : ""}</div>
+        <button class="link-btn" data-act="reportHelp">Як налаштувати автоматичний звіт?</button>`);
+      st.reportText = text;
+    },
+    reportTg() { location.href = "https://t.me/share/url?url=" + encodeURIComponent(st.reportText || ""); },
+    reportShare() { shareText(st.reportText || "", "Звіт скопійовано — вставте в чат адміністратора"); },
+    async reportBotNow(d) {
+      if (DEMO) return toast("У демо бот не надсилає");
+      const r = await must("report_send_now", { day: d.day || st.date }); toast(`Звіт надіслано (${r.sent})`); closeSheet();
+    },
+    reportSheet(msg) {
+      const s = st.settings, admins = s.report_admins || [];
+      openSheet(`<h2>Звіт адміністратору<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+        <p class="hint" style="margin-top:-4px">Щодня у вказаний час бот сам надсилає адміністратору список клієнтів за день із сумами.</p>
+        ${admins.length ? `<ul class="hist">${admins.map((a) => `<li><span>👤 ${esc(a.name)}</span><button class="chip-btn sm" data-act="reportUnlink" data-chat="${esc(a.chat)}">Відключити</button></li>`).join("")}</ul>` : '<div class="none" style="margin:8px 0">Адміністратора ще не підключено.</div>'}
+        <label class="field"><span>Надсилати щодня о</span><input id="r-time" type="time" value="${esc(s.report_time || "21:00")}"></label>
+        <div class="foot col">
+          <button class="btn blue" data-act="reportLink">${admins.length ? "Підключити ще одного адміністратора" : "Підключити адміністратора"}</button>
+          ${admins.length ? '<button class="btn light" data-act="reportSaveTime">Зберегти час</button><button class="btn light" data-act="reportBotNow">Надіслати звіт за сьогодні зараз</button>' : ""}
+        </div>
+        <button class="link-btn" data-act="reportHelp">Покрокова інструкція</button>`);
+    },
+    async reportLink() {
+      if (st.sub && !st.sub.pro) { toast("Автоматичний звіт — у тарифі Pro. Вручну — кнопкою в розкладі", true); return handlers.subSheet(); }
+      if (DEMO) return toast("Посилання працює в робочій версії");
+      const t = $("#r-time"); if (t && t.value) await must("settings_save", { settings: { report_time: t.value } });
+      const j = await must("report_link");
+      await shareText(`Привіт! Щоб щодня отримувати мій звіт по тренуваннях, відкрийте посилання й натисніть «Старт»: ${j.url}`, "Посилання скопійовано — надішліть його адміністратору");
+      toast("Коли адміністратор натисне «Старт», вам прийде повідомлення в Telegram");
+    },
+    async reportUnlink(d) { await must("report_unlink", { chat: d.chat }); await refreshBase(); toast("Адміністратора відключено"); handlers.reportSheet(); },
+    async reportSaveTime() { await must("settings_save", { settings: { report_time: $("#r-time").value } }); await refreshBase(); toast("Час збережено"); closeSheet(); render(); },
+    reportHelp() {
+      openSheet(`<h2>Звіт адміністратору<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+        <h3 style="margin:4px 0 6px">Вручну — будь-який тариф</h3>
+        <ol class="help">
+          <li>Відкрийте розклад на потрібний день.</li>
+          <li>Під списком тренувань натисніть <b>«📋 Звіт за день адміністратору»</b>.</li>
+          <li>Перевірте текст: клієнти, час, суми, позначки «абонемент», «борг», «не прийшов». Скасовані не входять.</li>
+          <li>Натисніть <b>«Надіслати в Telegram»</b>, виберіть чат адміністратора й надішліть. Або «Інший застосунок або скопіювати» — для Viber чи іншого месенджера.</li>
+        </ol>
+        <h3 style="margin:14px 0 6px">Автоматично — тариф Pro</h3>
+        <ol class="help">
+          <li><b>«Ще» → «Звіт адміністратору»</b>. Вкажіть час, наприклад 21:00.</li>
+          <li>Натисніть <b>«Підключити адміністратора»</b> й надішліть посилання адміністратору.</li>
+          <li>Адміністратор відкриває посилання й натискає <b>«Старт»</b> у боті. Вам прийде повідомлення, що підключено.</li>
+          <li>Готово: щодня о вказаній годині бот сам надсилає звіт. Вписуйте оплати до цього часу — звіт береться з журналу.</li>
+        </ol>
+        <p class="hint">Звіт може прийти із запізненням до години: сервер перевіряє розклад раз на годину. Один адміністратор може отримувати звіти від кількох тренерів — у кожному звіті вказано імʼя тренера (заповніть «Ваше імʼя» в налаштуваннях).</p>`);
+    },
     async backupNow() { if (st.sub && !st.sub.pro) { toast("Резервні копії в Telegram — у тарифі Pro", true); return handlers.subSheet(); } if (DEMO) { toast("Резервна копія працює в робочій версії"); return; } await must("backup_now"); await refreshBase(); toast("Файл надіслано у ваш Telegram"); render(); },
     async toggleBackup(d, el) { await must("settings_save", { settings: { backup_weekly: el.checked } }); await refreshBase(); toast(el.checked ? "Щотижнева копія увімкнена" : "Щотижнева копія вимкнена"); },
     async payDebt(d) { await must("participant_pay", { id: +d.id, pay: "paid" }); toast("Борг закрито"); await refreshBase(); render(); },

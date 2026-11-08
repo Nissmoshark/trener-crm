@@ -377,6 +377,25 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
   assert.equal((await OK("backup_now", {}, T)).sent, true);
   const doc = out3.find((x) => x.m === "sendDocument");
   assert.ok(doc && doc.chat_id === "100");
+  // звіт адміністратору
+  { const ru = (await OK("report_link", {}, T)).url; assert.match(ru, /start=r_/);
+    const rc = ru.split("start=")[1];
+    await c3.onUpdate({ message: { chat: { id: 700, type: "private" }, from: { id: 700, first_name: "Адмін", last_name: "Зал" }, text: "/start " + rc } });
+    assert.ok(out3.some((x) => x.chat_id === 700 && /Готово[\s\S]*21:00/.test(x.text)));
+    assert.ok(out3.some((x) => x.chat_id === 100 && /Адмін Зал[\s\S]*звіт/.test(x.text)));
+    await c3.onUpdate({ message: { chat: { id: 701, type: "private" }, from: { id: 701 }, text: "/start " + rc } });
+    assert.ok(out3.some((x) => x.chat_id === 701 && /застаріло/.test(x.text)));
+    let bs2 = (await OK("bootstrap", {}, T)).settings;
+    assert.equal(bs2.report_admins.length, 1); assert.equal(bs2.report_admins[0].name, "Адмін Зал"); assert.equal(bs2.report_time, "21:00");
+    assert.equal((await OK("report_send_now", { day: "2026-11-05" }, T)).sent, 1);
+    const rep = out3.filter((x) => x.chat_id === 700).at(-1).text;
+    assert.match(rep, /Звіт за 05\.11\.2026/); assert.match(rep, /1\. 18:00 Оля — 500 \(борг\)/); assert.match(rep, /Разом: 500/);
+    await OK("settings_save", { settings: { report_time: "00:00" } }, T);
+    assert.ok((await c3.tick()).includes("report"));
+    assert.ok(!(await c3.tick()).includes("report"));
+    await OK("report_unlink", { chat: "700" }, T);
+    assert.equal((await OK("bootstrap", {}, T)).settings.report_admins.length, 0);
+    await BAD("report_send_now", {}, T, /адміністратора/); }
   // щонеділі автоматично
   clk = Date.parse("2026-11-15T19:40:00Z"); // нд 21:40
   t = await c3.tick(); assert.ok(t.includes("backup"), "weekly backup " + t);

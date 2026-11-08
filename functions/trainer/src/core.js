@@ -13,6 +13,30 @@ const ADMIN_SETUP_HASH = "FiHtdyLO5HXp1XEg2o-wZfo4aAqOgvmOOhp0HmybZ7E";
 const BOT_CFG = "2"; // версія налаштувань бота (кнопки «Буду / Не зможу»)
 const EXP_CATS = ["rent", "gear", "transport", "education", "ads", "food", "other"];
 export class ApiError extends Error {}
+export const LANDING_DEFAULT = {
+  hero_title: "Журнал персонального тренера",
+  hero_sub: "Розклад, клієнти, абонементи й оплати в телефоні. Бот сам нагадує клієнтам про тренування, а вам — про борги.",
+  cta: "Спробувати безкоштовно",
+  plates: ["Розклад", "Абонементи", "Борги", "Нагадування"],
+  features: [
+    ["Розклад на день, тиждень і місяць", "Персональні, спліт і групові тренування. Повтор щотижня одним натиском, переноси з історією."],
+    ["Абонементи без зошита", "Видно, скільки проведено, заплановано й лишилось. Коли лишається 1–2 тренування — нагадування продати новий."],
+    ["Оплати й борги", "Хто заплатив, хто винен і скільки. Нагадування боржнику — одним натиском у Telegram або Viber."],
+    ["Бот для вас і клієнтів", "Зранку план дня, ввечері підсумок. Клієнти отримують нагадування з кнопками «Буду» і «Не зможу»."],
+    ["Програма й прогрес", "Вправи з підходами й вагою, заміри тіла й графік ваги в картці кожного клієнта."],
+    ["Гроші під контролем", "Дохід, витрати на зал і інвентар, чистий прибуток і ціль на місяць."],
+  ],
+  steps: [["Зареєструйтесь", "Номер телефону й пароль — і журнал готовий."], ["Додайте клієнтів", "Імʼя, телефон, ціна тренування."], ["Записуйте тренування", "Решту бот і журнал зроблять самі."]],
+  faq: [
+    ["Чи бачать інші тренери моїх клієнтів?", "Ні. Кожен тренер бачить лише свої дані."],
+    ["Що буде, коли закінчиться пробний період?", "Журнал залишиться доступним для перегляду. Щоб записувати далі, оберіть тариф."],
+    ["Чи працює на iPhone і Android?", "Так. Відкрийте сайт у браузері й додайте іконку на головний екран."],
+    ["Як оплатити?", "Карткою через monobank. Підписка продовжується після підтвердження оплати."],
+  ],
+  contact_telegram: "",
+  contact_phone: "",
+  footer: "Журнал тренувань",
+};
 
 export function createCore(st, opts = {}) {
   let nowMs = opts.now ?? (() => Date.now());
@@ -831,6 +855,32 @@ export function createCore(st, opts = {}) {
       await kvSet("ac_" + code, String(nowMs()));
       return { url: `https://t.me/${s.bot_username}?start=a_${code}` };
     },
+    async admin_landing_get() {
+      const s = await settings(true);
+      let leads = []; try { leads = JSON.parse(s.leads || "[]"); } catch { /* */ }
+      return { content: landingContent(s), defaults: LANDING_DEFAULT, leads, landing_domain: s.landing_domain || "", app_domain: s.app_domain || "" };
+    },
+    async admin_landing_save(b) {
+      const c = b.content ?? {};
+      const out = {};
+      for (const k of ["hero_title", "hero_sub", "cta", "contact_telegram", "contact_phone", "footer"]) if (c[k] != null) out[k] = String(c[k]).trim().slice(0, k === "hero_sub" ? 400 : 120);
+      if (c.plates != null) out.plates = (Array.isArray(c.plates) ? c.plates : []).map((x) => String(x).trim().slice(0, 24)).filter(Boolean).slice(0, 6);
+      if (c.features != null) out.features = cleanLines(c.features, 12);
+      if (c.steps != null) out.steps = cleanLines(c.steps, 6);
+      if (c.faq != null) out.faq = cleanLines(c.faq, 15);
+      const cur = landingContent(await settings(true));
+      await kvSet("landing_json", JSON.stringify({ ...cur, ...out }));
+      return { content: { ...cur, ...out } };
+    },
+    async admin_landing_reset() { await kvSet("landing_json", "{}"); return {}; },
+    async admin_leads_clear() { await kvSet("leads", "[]"); return {}; },
+    async admin_domains_save(b) {
+      const d = (x) => String(x ?? "").trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+      const ld = d(b.landing_domain), ad = d(b.app_domain);
+      for (const x of [ld, ad]) if (x && !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(x)) throw new ApiError("Невірний домен: " + x);
+      await kvSet("landing_domain", ld); await kvSet("app_domain", ad);
+      return { landing_domain: ld, app_domain: ad };
+    },
     async admin_reset_throttles() {
       const rows = (await st.list("kv")).filter((r) => String(r.id).startsWith("f_"));
       for (const r of rows) await kvDel(r.id);
@@ -867,9 +917,26 @@ export function createCore(st, opts = {}) {
   }
 
   // ───────── Публічні дії (без токена) ─────────
+  function landingContent(g) {
+    let c = {}; try { c = JSON.parse(g.landing_json || "{}"); } catch { /* */ }
+    return { ...LANDING_DEFAULT, ...c };
+  }
+  const cleanLines = (a, n) => (Array.isArray(a) ? a : []).slice(0, n).map((r) => (Array.isArray(r) ? r : [r]).map((x) => String(x ?? "").trim().slice(0, 400))).filter((r) => r[0]);
   async function publicAction(action, b, ctx) {
-    if (!["status", "setup", "register", "login", "forgot", "reset"].includes(action)) return undefined;
+    if (!["status", "setup", "register", "login", "forgot", "reset", "landing", "landing_lead"].includes(action)) return undefined;
     const g = await settings(true);
+    if (action === "landing") return { content: landingContent(g), price_basic: Number(g.price_basic) || 0, price_pro: Number(g.price_pro) || 0, trial_days: Number(g.trial_days || 14), app_domain: g.app_domain || "" };
+    if (action === "landing_lead") {
+      const lt = await throttleCheck("lead", ctx.ip || "?", 3, 60);
+      const name = String(b.name ?? "").trim().slice(0, 80), phone = String(b.phone ?? "").trim().slice(0, 40), msg = String(b.msg ?? "").trim().slice(0, 600);
+      if (!name || !(normPhone(phone) || /^@?\w{4,}$/.test(phone))) throw new ApiError("Вкажіть імʼя й телефон або нік у Telegram");
+      await throttleFail(lt);
+      let leads = []; try { leads = JSON.parse(g.leads || "[]"); } catch { /* */ }
+      leads.unshift({ at: new Date(nowMs()).toISOString(), name, phone, msg });
+      await kvSet("leads", JSON.stringify(leads.slice(0, 100)));
+      if (g.admin_chat_id) await send(g.admin_chat_id, `📩 Заявка з сайту: <b>${esc(name)}</b>, ${esc(phone)}${msg ? `\n${esc(msg)}` : ""}`);
+      return { sent: true };
+    }
     if (action === "status") return { needs_setup: false, multi: true, trainer_name: "", price_basic: Number(g.price_basic) || 0, price_pro: Number(g.price_pro) || 0, trial_days: Number(g.trial_days || 14) };
     const ipT = await throttleCheck("ip", ctx.ip || "?", 20, 15);
     const appUrl = b._app && /^https:\/\/[\w.-]+(:\d+)?\/[\w./-]*$/.test(b._app) ? b._app.split("#")[0] : "";

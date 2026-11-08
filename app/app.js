@@ -161,14 +161,14 @@
     const tags = [];
     if (s.status === "no_show") tags.push('<span class="tag noshow">не прийшов</span>');
     if (s.participants.some((p) => p.pay === "debt")) tags.push('<span class="tag debt">борг</span>');
-    if (s.participants.some((p) => p.pay === "package")) tags.push('<span class="tag pkg">абонемент</span>');
     if (s.participants.some((p) => p.confirm === "no")) tags.push('<span class="tag debt">❌ не зможе</span>');
     else if (s.participants.length && s.participants.every((p) => p.confirm === "yes")) tags.push('<span class="tag ok">✅ підтверджено</span>');
     if (s.series) tags.push('<span class="tag moved">↻</span>');
     if (s.moves && s.moves.length) tags.push(`<span class="tag moved">перенесено з ${s.moves[s.moves.length - 1].from_time}</span>`);
     const sub = [s.kind !== "personal" ? KIND[s.kind] : `${s.duration_min} хв`, ...tags];
-    return `<button class="sess ${s.kind} ${s.status}" data-act="editSession" data-id="${s.id}">
-      <div class="time">${s.start_time}<small>${s.duration_min} хв</small></div>
+    const pk = s.participants.some((p) => p.pay === "package");
+    return `<button class="sess ${s.kind} ${s.status}${pk ? " abon" : ""}" data-act="editSession" data-id="${s.id}"${pk ? ' aria-label="Абонемент"' : ""}>
+      <div class="time">${pk ? '<i class="abon-a" title="Абонемент">А</i>' : ""}${s.start_time}<small>${s.duration_min} хв</small></div>
       <div class="body"><div class="who">${esc(sessWho(s))}</div><div class="sub">${sub.join(" ")}</div></div>
       <div class="price">${num(sessTotal(s) || (s.status === "cancelled" ? s.participants.reduce((a, p) => a + p.price, 0) + Number(s.extra_amount) : 0))}</div>
     </button>`;
@@ -1021,7 +1021,7 @@
   async function showLogin() {
     const s = await call("status");
     const m = location.hash.match(/reset=([\w-]+)/);
-    let mode = m ? "reset" : s.ok && s.needs_setup ? "setup" : "login";
+    let mode = m ? "reset" : location.hash === "#register" || (s.ok && s.needs_setup) ? "setup" : "login";
     const T = {
       setup: ["Реєстрація тренера", `Журнал тренувань, клієнти, абонементи й статистика. ${s.trial_days || 14} днів безкоштовно з усіма можливостями.`],
       login: ["Журнал тренувань", "Увійдіть за номером телефону й паролем."],
@@ -1108,6 +1108,8 @@
         <label class="field"><span>Підказка до оплати (бачить тренер)</span><input id="b-info" value="${esc(j.billing.pay_info)}" placeholder="У коментарі вкажіть свій номер телефону"></label>
         <label class="field"><span>Пробний період, днів</span><input id="b-trial" type="number" inputmode="numeric" value="${j.billing.trial_days}"></label>
         <div class="actions"><button class="btn blue" data-a="bill">Зберегти</button><button class="btn light" data-a="atg">${j.admin_tg ? "✅ Сповіщення в Telegram" : "Сповіщення мені в Telegram"}</button></div></div>
+      <div class="card"><h3>Лендінг і домен</h3><p class="hint">Сторінка для нових тренерів: тексти, питання, контакти й заявки. Свій домен підключається тут же.</p>
+        <div class="actions"><button class="btn blue" data-a="land">Відкрити редактор</button><a class="btn light" href="/landing/" target="_blank" rel="noopener">Переглянути</a></div></div>
       <div class="card"><h3>Дані</h3><div class="rows">${Object.entries(j.counts).map(([k, v]) => row({ clients: "Клієнти", packages: "Абонементи", sessions: "Тренування", parts: "Учасники тренувань", moves: "Переноси", plans: "Плани", expenses: "Витрати", measures: "Заміри" }[k] || k, v)).join("")}</div></div>
       <div class="card"><h3>Бот</h3><div class="rows">${row("Бот", j.bot.username ? "@" + esc(j.bot.username) : "—")}${row("Вбудований", j.bot.managed ? "так" : "ні")}${row("Webhook", j.bot.webhook ? esc(j.bot.webhook.url) : "—")}${row("У черзі", j.bot.webhook ? j.bot.webhook.pending : "—")}${j.bot.webhook && j.bot.webhook.last_error ? row("Остання помилка", esc(j.bot.webhook.last_error) + " · " + dt(j.bot.webhook.last_error_at)) : ""}</div>
         <div class="actions" style="margin-top:12px;flex-wrap:wrap"><button class="btn light" data-a="msg">Тест-повідомлення тренеру</button><button class="btn light" data-a="backup">Резервна копія</button></div></div>
@@ -1152,6 +1154,7 @@
       if (a === "life") return run("admin_tenant_update", { tid, lifetime: b.dataset.v === "1" }, () => (b.dataset.v === "1" ? "Безстроковий доступ увімкнено" : "Безстроковий доступ знято"));
       if (a === "plan") return run("admin_tenant_update", { tid, plan: b.dataset.plan }, () => "Тариф змінено");
       if (a === "blk") return run("admin_tenant_update", { tid, blocked: b.dataset.v === "1" }, () => (b.dataset.v === "1" ? "Кабінет призупинено" : "Кабінет відновлено"));
+      if (a === "land") return showAdminLanding();
       if (a === "bill") return run("admin_billing_save", { price_basic: +$("#b-basic").value || 0, price_pro: +$("#b-pro").value || 0, mono_url: $("#b-mono").value, pay_info: $("#b-info").value, trial_days: +$("#b-trial").value || 0 }, () => "Тарифи збережено");
       if (a === "atg") { const r = await acall("admin_tg_link"); if (!r.ok) return showAdmin("⚠️ " + r.error); window.open(r.url, "_blank"); return toast("У Telegram: «Старт» → «Надіслати мій номер»"); }
       if (a === "backup") return run("admin_backup", { tid }, () => "Резервну копію надіслано тренеру в Telegram");
@@ -1162,6 +1165,64 @@
       if (a === "exit") { location.hash = ""; location.reload(); return; }
       if (a === "out" || a === "outall") { if (a === "outall") await acall("admin_logout_all"); atoken = ""; try { localStorage.removeItem("trainer-admin"); } catch { /* */ } return showAdmin(); }
     };
+  }
+
+  // Редактор лендінгу, заявки, домени
+  async function showAdminLanding(msg = "") {
+    const j = await acall("admin_landing_get");
+    if (!j.ok) return showAdmin("⚠️ " + j.error);
+    const c = j.content, lines = (a) => (a || []).map((r) => r.join(" | ")).join("\n");
+    const dt = (x) => (x ? new Date(x).toLocaleString("uk-UA", { dateStyle: "short", timeStyle: "short" }) : "");
+    const f = (id, label, val, hint = "") => `<label class="field"><span>${label}</span><input id="${id}" value="${esc(val || "")}">${hint ? `<small class="hint">${hint}</small>` : ""}</label>`;
+    const t = (id, label, val, hint) => `<label class="field"><span>${label}</span><textarea id="${id}" rows="6">${esc(val)}</textarea><small class="hint">${hint}</small></label>`;
+    const host = j.landing_domain || "ваш-домен.com.ua";
+    root.innerHTML = `<div class="app admin">
+      <header class="top"><div class="top-row"><button class="icon-btn" data-a="back" aria-label="Назад">${ICON.left}</button><h1 class="title">Лендінг</h1><a class="chip-btn" href="/landing/" target="_blank" rel="noopener">Переглянути</a></div></header>
+      ${msg ? `<div class="card" role="status">${esc(msg)}</div>` : ""}
+      <div class="card"><h3 class="row-h"><span>Заявки (${j.leads.length})</span>${j.leads.length ? '<button class="chip-btn sm" data-a="lclr">Очистити</button>' : ""}</h3>
+        ${j.leads.length ? `<ul class="errs">${j.leads.map((l) => `<li><small>${dt(l.at)}</small><b>${esc(l.name)}</b> · <a href="${/^\+?[\d\s()-]{9,}$/.test(l.phone) ? "tel:" + esc(l.phone.replace(/[^\d+]/g, "")) : "https://t.me/" + esc(l.phone.replace(/^@/, ""))}" target="_blank" rel="noopener">${esc(l.phone)}</a>${l.msg ? `<div>${esc(l.msg)}</div>` : ""}</li>`).join("")}</ul>` : '<div class="none">Заявок ще немає. Вони також приходять вам у Telegram, якщо підключені сповіщення.</div>'}</div>
+      <div class="card"><h3>Тексти</h3>
+        ${f("l-title", "Заголовок", c.hero_title)}
+        <label class="field"><span>Підзаголовок</span><textarea id="l-sub" rows="3">${esc(c.hero_sub)}</textarea></label>
+        ${f("l-cta", "Текст головної кнопки", c.cta)}
+        ${f("l-plates", "Написи на дисках штанги (через кому, до 4)", (c.plates || []).join(", "), "Короткі слова — вони пишуться вертикально на дисках.")}
+        ${t("l-feat", "Можливості", lines(c.features), "Кожна з нового рядка: Заголовок | опис")}
+        ${t("l-steps", "Кроки", lines(c.steps), "Кожен з нового рядка: Крок | пояснення")}
+        ${t("l-faq", "Питання й відповіді", lines(c.faq), "Кожне з нового рядка: Питання | відповідь")}
+        ${f("l-tg", "Telegram для звʼязку", c.contact_telegram, "Нік без @, напр. trener_support")}
+        ${f("l-phone", "Телефон для звʼязку", c.contact_phone)}
+        ${f("l-footer", "Підпис унизу", c.footer)}
+        <div class="actions"><button class="btn blue" data-a="lsave">Зберегти</button><button class="btn light" data-a="lreset">Повернути стандартні тексти</button></div>
+        <p class="hint">Ціни на лендінгу беруться з «Тарифи й оплата» в адмінці.</p></div>
+      <div class="card"><h3>Свій домен</h3>
+        ${f("d-land", "Домен лендінгу", j.landing_domain, "Напр. trenerka.com.ua")}
+        ${f("d-app", "Домен застосунку", j.app_domain, "Напр. app.trenerka.com.ua — сюди ведуть кнопки «Увійти» й «Спробувати»")}
+        <div class="actions"><button class="btn blue" data-a="dsave">Зберегти домени</button></div>
+        <ol class="help" style="margin-top:14px;font-size:14px">
+          <li>Купіть домен у реєстратора (nic.ua, imena.ua тощо).</li>
+          <li>Консоль Appwrite → <b>Sites</b> → «Журнал тренувань» → <b>Domains</b> → <b>Add domain</b>. Додайте два домени: <b>${esc(host)}</b> (лендінг) і <b>app.${esc(host.replace(/^www\./, ""))}</b> (застосунок), тип — Active deployment.</li>
+          <li>Appwrite покаже DNS-записи. Для <b>app.</b> — запис CNAME; для самого домену — або сервери імен Appwrite, або ALIAS/ANAME, як підкаже консоль. Внесіть їх у кабінеті реєстратора.</li>
+          <li>Дочекайтесь «Verified» у Appwrite (від кількох хвилин до доби).</li>
+          <li>Впишіть домени вище й збережіть. Відкриваєте ${esc(host)} — бачите лендінг, app.${esc(host.replace(/^www\./, ""))} — журнал. Стара адреса теж продовжує працювати.</li>
+          <li>Android-застосунок (APK) перезберіть на PWABuilder з новою адресою застосунку й тим самим ключем підпису.</li>
+        </ol></div>
+    </div>`;
+    root.onclick = async (e) => {
+      const b = e.target.closest("[data-a]"); if (!b) return;
+      const a = b.dataset.a;
+      const parse = (id) => $("#" + id).value.split("\n").map((x) => x.split("|").map((y) => y.trim())).filter((r) => r[0]);
+      if (a === "back") return showAdmin();
+      if (a === "lclr") { const r = await acall("admin_leads_clear"); return showAdminLanding(r.ok ? "Заявки очищено" : "⚠️ " + r.error); }
+      if (a === "lreset") { if (!confirm("Повернути стандартні тексти лендінгу?")) return; const r = await acall("admin_landing_reset"); return showAdminLanding(r.ok ? "Повернуто стандартні тексти" : "⚠️ " + r.error); }
+      if (a === "lsave") {
+        const r = await acall("admin_landing_save", { content: { hero_title: $("#l-title").value, hero_sub: $("#l-sub").value, cta: $("#l-cta").value,
+          plates: $("#l-plates").value.split(",").map((x) => x.trim()).filter(Boolean), features: parse("l-feat"), steps: parse("l-steps"), faq: parse("l-faq"),
+          contact_telegram: $("#l-tg").value, contact_phone: $("#l-phone").value, footer: $("#l-footer").value } });
+        return showAdminLanding(r.ok ? "Лендінг збережено — оновіть сторінку лендінгу" : "⚠️ " + r.error);
+      }
+      if (a === "dsave") { const r = await acall("admin_domains_save", { landing_domain: $("#d-land").value, app_domain: $("#d-app").value }); return showAdminLanding(r.ok ? "Домени збережено" : "⚠️ " + r.error); }
+    };
+    window.scrollTo(0, 0);
   }
 
   async function start() {
@@ -1189,5 +1250,5 @@
   // подвійний дотик вимкнено через touch-action: manipulation (CSS) — швидкі натискання кнопок не губляться
   if ("serviceWorker" in navigator && location.protocol === "https:" && !DEMO) navigator.serviceWorker.register("sw.js").catch(() => {});
   if (location.hash === "#admin") showAdmin();
-  else if (DEMO || (token && !/reset=/.test(location.hash))) start(); else showLogin();
+  else if (DEMO || (token && !/reset=|register/.test(location.hash))) start(); else showLogin();
 })();

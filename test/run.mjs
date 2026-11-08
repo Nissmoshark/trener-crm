@@ -409,6 +409,25 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
     await BAD("bootstrap", {}, T, /auth/);
     await OK("login", { phone: "0936419354", password: "NewTrainer2026" });
     await OK("admin_reset_throttles", {}, AT);
+    // лендінг: контент, заявки, домени
+    const L0 = await OK("landing", {});
+    assert.ok(L0.content.hero_title && L0.content.features.length >= 3);
+    await OK("admin_landing_save", { content: { hero_title: "Новий заголовок", plates: ["А", "Б"], faq: [["Питання?", "Відповідь"]], features: [["X", "y"]] } }, AT);
+    const L1 = await OK("landing", {});
+    assert.equal(L1.content.hero_title, "Новий заголовок"); assert.deepEqual(L1.content.plates, ["А", "Б"]); assert.equal(L1.content.faq[0][0], "Питання?");
+    await BAD("admin_landing_save", { content: {} }, T, /auth/);
+    await OK("landing_lead", { name: "Олег", phone: "0671234567", msg: "хочу" });
+    await BAD("landing_lead", { name: "", phone: "" }, null, /./);
+    const LG = await OK("admin_landing_get", {}, AT);
+    assert.equal(LG.leads[0].name, "Олег");
+    await OK("admin_domains_save", { landing_domain: "trenerka.com.ua", app_domain: "app.trenerka.com.ua" }, AT);
+    assert.equal((await OK("landing", {})).app_domain, "app.trenerka.com.ua");
+    await BAD("admin_domains_save", { landing_domain: "not a domain!", app_domain: "" }, AT, /./);
+    await OK("admin_leads_clear", {}, AT);
+    assert.equal((await OK("admin_landing_get", {}, AT)).leads.length, 0);
+    await OK("admin_landing_reset", {}, AT);
+    assert.notEqual((await OK("landing", {})).content.hero_title, "Новий заголовок");
+    n += 12;
     const AT2 = (await OK("admin_login", { phone: "0500000000", password: "Admin2026x" })).token;
     await BAD("admin_login", { phone: "0500000000", password: "nope12345" }, null, /Невірний/);
     await OK("admin_logout_all", {}, AT2);

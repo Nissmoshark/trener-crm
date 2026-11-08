@@ -384,3 +384,11 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .ten-act { flex-wrap: wrap; margin-top: 8px; }
 .ten-act .btn { height: 34px; font-size: 13px; padding: 0 10px; }
 .row-h .tag { flex: none; }
+
+/* Абонемент: фіолетова плитка часу з літерою «А»; однакова висота карток */
+.sess { min-height: 68px; }
+.sess .time { position: relative; }
+.sess.abon .time { background: #7a4cc2; color: #fff; }
+.abon-a { position: absolute; top: 5px; left: 5px; width: 17px; height: 17px; border-radius: 50%; background: #fff; color: #7a4cc2; font: 700 10px/17px var(--display); font-style: normal; text-align: center; }
+.sess .sub { flex-wrap: nowrap; overflow: hidden; white-space: nowrap; }
+.sess .sub .tag { flex: none; width: auto; }

@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Журнал тренувань — CRM для персонального тренера</title>
+<meta name="description" content="Розклад, клієнти, абонементи, оплати й борги в телефоні. Telegram-бот нагадує клієнтам про тренування. 14 днів безкоштовно.">
+<meta name="theme-color" content="#23262c">
+<link rel="icon" href="../icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="../icon-192.png">
+<meta property="og:title" content="Журнал тренувань — CRM для персонального тренера">
+<meta property="og:description" content="Розклад, абонементи, борги й нагадування клієнтам у Telegram.">
+<meta property="og:image" content="shot-1.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;600;700;800&display=swap&subset=cyrillic" rel="stylesheet">
+<style>
+:root {
+  --chalk: #f6f7f5;      /* магнезія */
+  --iron: #23262c;       /* залізо */
+  --steel: #c9ccd2;      /* гриф */
+  --muted: #5d636e;
+  --line: #e2e4e1;
+  --red: #d23b3b;        /* диск 25 */
+  --blue: #1f5fbf;       /* диск 20 */
+  --yellow: #f0b400;     /* диск 15 */
+  --green: #2e9d5b;      /* диск 10 */
+  --display: "Unbounded", "Manrope", system-ui, sans-serif;
+  --text: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--chalk); color: var(--iron); font: 17px/1.55 var(--text); overflow-x: hidden; }
+a { color: inherit; }
+img { max-width: 100%; display: block; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; border-radius: 6px; }
+
+/* шапка */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 0; }
+.brand { display: flex; align-items: center; gap: 10px; font: 700 15px var(--display); text-decoration: none; }
+.brand svg { width: 34px; height: 34px; }
+.login-link { font-weight: 700; text-decoration: none; padding: 10px 14px; border-radius: 12px; }
+.login-link:hover { background: #eceeeb; }
+
+/* головний екран */
+.hero { padding: 28px 0 8px; }
+.hero h1 { font: 800 clamp(34px, 7.4vw, 76px)/1.02 var(--display); letter-spacing: -0.035em; margin: 0; max-width: 13ch; }
+.hero p.sub { font-size: clamp(17px, 2.2vw, 21px); color: var(--muted); max-width: 36em; margin: 20px 0 28px; }
+.cta-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; height: 56px; padding: 0 26px; border-radius: 16px; background: var(--blue); color: #fff; font: 700 17px var(--text); text-decoration: none; border: 0; cursor: pointer; }
+.btn:hover { background: #1a51a3; }
+.btn.dark { background: var(--iron); }
+.trial { color: var(--muted); font-size: 15px; }
+
+/* штанга: диски = можливості журналу */
+.bar-wrap { margin: 44px 0 8px; }
+.barbell { position: relative; height: clamp(150px, 26vw, 250px); display: flex; align-items: center; justify-content: center; }
+.barbell .rod { position: absolute; left: 0; right: 0; top: 50%; height: clamp(10px, 1.6vw, 16px); transform: translateY(-50%); background: var(--steel); border-radius: 99px; }
+.barbell .side { position: relative; display: flex; align-items: center; gap: clamp(3px, .6vw, 6px); }
+.barbell .side.l { flex-direction: row-reverse; margin-right: clamp(60px, 22vw, 300px); }
+.plate { display: flex; align-items: center; justify-content: center; border-radius: clamp(8px, 1.2vw, 12px); color: #fff; font: 700 clamp(10px, 1.45vw, 15px) var(--display); writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: .01em; white-space: nowrap; }
+.plate.c0 { background: var(--red); } .plate.c1 { background: var(--blue); } .plate.c2 { background: var(--yellow); color: var(--iron); } .plate.c3 { background: var(--green); }
+.plate.s0 { height: clamp(150px, 26vw, 250px); width: clamp(34px, 5.4vw, 58px); }
+.plate.s1 { height: clamp(126px, 22vw, 212px); width: clamp(30px, 4.8vw, 52px); }
+.plate.s2 { height: clamp(104px, 18vw, 176px); width: clamp(28px, 4.4vw, 46px); }
+.plate.s3 { height: clamp(86px, 14.5vw, 142px); width: clamp(26px, 4vw, 42px); }
+.collar { width: clamp(10px, 1.6vw, 16px); height: clamp(30px, 5vw, 48px); background: #8d929b; border-radius: 6px; }
+@media (prefers-reduced-motion: no-preference) {
+  .loading .side.r .plate, .loading .side.r .collar { transform: translateX(110vw) rotate(180deg); }
+  .loading .side.l .plate, .loading .side.l .collar { transform: translateX(-110vw) rotate(180deg); }
+  .side .plate, .side .collar { transition: transform .9s cubic-bezier(.2, .9, .25, 1.05); }
+  .side .collar { transition-delay: .55s; }
+  .side .plate:nth-child(2) { transition-delay: .1s; } .side .plate:nth-child(3) { transition-delay: .2s; } .side .plate:nth-child(4) { transition-delay: .3s; }
+}
+
+/* скриншоти */
+.screens { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 1fr); gap: 20px; overflow-x: auto; padding: 36px 20px 20px; margin: 0 -20px; scroll-snap-type: x mandatory; }
+.phone { scroll-snap-align: center; margin: 0; }
+.phone .frame { border: 10px solid var(--iron); border-radius: 34px; overflow: hidden; background: var(--iron); box-shadow: 0 24px 50px -24px rgba(35, 38, 44, .45); aspect-ratio: 375 / 760; }
+.phone img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.phone figcaption { margin-top: 12px; font-weight: 700; }
+.phone figcaption span { display: block; font-weight: 500; color: var(--muted); font-size: 15px; }
+
+/* розділи */
+section.block { padding: 64px 0 8px; }
+h2 { font: 700 clamp(26px, 4.2vw, 40px)/1.12 var(--display); letter-spacing: -0.025em; margin: 0 0 28px; max-width: 20ch; }
+.features { display: grid; gap: 30px 44px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); list-style: none; margin: 0; padding: 0; }
+.features li { display: grid; grid-template-columns: 14px 1fr; gap: 16px; }
+.features li::before { content: ""; border-radius: 6px; background: var(--c); height: 100%; min-height: 64px; }
+.features h3 { font: 700 18px/1.3 var(--text); margin: 0 0 6px; }
+.features p { margin: 0; color: var(--muted); }
+.steps { list-style: none; counter-reset: s; margin: 0; padding: 0; display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+.steps li { counter-increment: s; border-top: 3px solid var(--iron); padding-top: 14px; }
+.steps li::before { content: counter(s); font: 800 34px/1 var(--display); display: block; margin-bottom: 10px; }
+.steps b { display: block; font-size: 18px; }
+.steps span { color: var(--muted); }
+
+/* тарифи */
+.prices { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+.price { border: 2px solid var(--line); border-radius: 22px; padding: 26px; background: #fff; display: flex; flex-direction: column; }
+.price.pro { border-color: var(--iron); }
+.price h3 { font: 700 22px var(--display); margin: 0; }
+.price .amt { font: 800 40px/1 var(--display); margin: 16px 0 4px; letter-spacing: -0.03em; }
+.price .amt small { font: 600 16px var(--text); color: var(--muted); letter-spacing: 0; }
+.price ul { margin: 16px 0 22px; padding-left: 20px; color: var(--muted); }
+.price ul li { margin: 6px 0; }
+.price .btn { margin-top: auto; }
+
+/* питання */
+.faq details { border-bottom: 1px solid var(--line); padding: 18px 0; }
+.faq summary { cursor: pointer; font-weight: 700; font-size: 18px; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; font: 700 22px var(--display); line-height: 1; }
+.faq details[open] summary::after { content: "−"; }
+.faq details p { margin: 10px 0 0; color: var(--muted); max-width: 60ch; }
+
+/* заявка */
+.contact { display: grid; gap: 32px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); align-items: start; }
+.form { display: grid; gap: 12px; background: var(--iron); color: #fff; padding: 24px; border-radius: 22px; }
+.form label { display: grid; gap: 6px; font-weight: 600; font-size: 15px; }
+.form input, .form textarea { font: 16px var(--text); border: 0; border-radius: 12px; padding: 13px 14px; background: #fff; color: var(--iron); width: 100%; }
+.form textarea { min-height: 90px; resize: vertical; }
+.form .btn { width: 100%; background: var(--yellow); color: var(--iron); }
+.form .btn:hover { background: #ffc419; }
+.form .msg { min-height: 22px; font-weight: 600; }
+.links a { display: block; font-weight: 700; margin: 8px 0; }
+
+footer { padding: 56px 0 40px; color: var(--muted); font-size: 15px; }
+@media (min-width: 900px) { .screens { overflow: visible; grid-auto-flow: row; grid-template-columns: repeat(3, 1fr); padding: 44px 0 0; margin: 0; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="./" aria-label="Журнал тренувань">
+      <svg viewBox="0 0 512 512" aria-hidden="true"><rect width="512" height="512" rx="112" fill="#23262c"/><rect x="96" y="244" width="320" height="24" rx="12" fill="#c9ccd2"/><rect x="128" y="168" width="44" height="176" rx="12" fill="#1f5fbf"/><rect x="340" y="168" width="44" height="176" rx="12" fill="#1f5fbf"/><rect x="178" y="200" width="30" height="112" rx="10" fill="#f0b400"/><rect x="304" y="200" width="30" height="112" rx="10" fill="#f0b400"/></svg>
+      <span id="brand-name">Журнал тренувань</span>
+    </a>
+    <a class="login-link" data-app="" href="../">Увійти</a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1 id="hero-title">Журнал персонального тренера</h1>
+      <p class="sub" id="hero-sub">Розклад, клієнти, абонементи й оплати в телефоні. Бот сам нагадує клієнтам про тренування, а вам — про борги.</p>
+      <div class="cta-row">
+        <a class="btn" data-app="#register" href="../#register" id="cta">Спробувати безкоштовно</a>
+        <span class="trial" id="trial">14 днів з усіма можливостями, без картки</span>
+      </div>
+      <div class="bar-wrap" aria-label="Можливості журналу">
+        <div class="barbell loading" id="barbell"><div class="rod"></div><div class="side l"></div><div class="side r"></div></div>
+      </div>
+    </section>
+
+    <div class="screens">
+      <figure class="phone"><div class="frame"><img src="shot-1.webp" alt="Розклад тренувань на день із сумою доходу" loading="lazy" width="375" height="760"></div><figcaption>Розклад<span>Хто, коли й скільки — на день, тиждень, місяць</span></figcaption></figure>
+      <figure class="phone"><div class="frame"><img src="shot-2.webp" alt="Картка клієнта з програмою тренувань і замірами" loading="lazy" width="375" height="760"></div><figcaption>Картка клієнта<span>Програма, заміри, абонемент, історія</span></figcaption></figure>
+      <figure class="phone"><div class="frame"><img src="shot-3.webp" alt="Статистика: дохід, витрати, прибуток і ціль місяця" loading="lazy" width="375" height="760"></div><figcaption>Статистика<span>Дохід, витрати, прибуток і ціль місяця</span></figcaption></figure>
+    </div>
+
+    <section class="block" aria-labelledby="h-feat">
+      <h2 id="h-feat">Усе, що тренер зараз тримає в голові й у нотатках</h2>
+      <ul class="features" id="features"></ul>
+    </section>
+
+    <section class="block" aria-labelledby="h-steps">
+      <h2 id="h-steps">Почати — три кроки</h2>
+      <ol class="steps" id="steps"></ol>
+    </section>
+
+    <section class="block" aria-labelledby="h-price" id="prices-block">
+      <h2 id="h-price">Тарифи</h2>
+      <div class="prices">
+        <div class="price">
+          <h3>Звичайний</h3>
+          <div class="amt"><span id="p-basic">—</span> <small>грн / місяць</small></div>
+          <ul><li>Розклад, клієнти, абонементи</li><li>Оплати, борги, витрати</li><li>Плани, програма, заміри</li><li>Статистика й ціль місяця</li></ul>
+          <a class="btn dark" data-app="#register" href="../#register">Почати</a>
+        </div>
+        <div class="price pro">
+          <h3>Pro</h3>
+          <div class="amt"><span id="p-pro">—</span> <small>грн / місяць</small></div>
+          <ul><li>Усе зі Звичайного</li><li>Telegram-бот: план і підсумок дня</li><li>Нагадування клієнтам з «Буду / Не зможу»</li><li>Нагадування боржникам і резервні копії</li></ul>
+          <a class="btn" data-app="#register" href="../#register">Почати з Pro</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="block faq" aria-labelledby="h-faq">
+      <h2 id="h-faq">Питання</h2>
+      <div id="faq"></div>
+    </section>
+
+    <section class="block" aria-labelledby="h-contact">
+      <div class="contact">
+        <div>
+          <h2 id="h-contact">Залишились питання?</h2>
+          <p style="color:var(--muted);margin:0 0 12px;max-width:34ch">Напишіть — покажемо журнал і допоможемо перенести клієнтів.</p>
+          <div class="links" id="links"></div>
+        </div>
+        <form class="form" id="lead" novalidate>
+          <label>Імʼя<input name="name" autocomplete="name" required></label>
+          <label>Телефон або нік у Telegram<input name="phone" autocomplete="tel" required></label>
+          <label>Повідомлення<textarea name="msg" placeholder="Скільки у вас клієнтів, що зараз незручно"></textarea></label>
+          <div class="msg" role="status" id="lead-msg"></div>
+          <button class="btn" type="submit">Надіслати заявку</button>
+        </form>
+      </div>
+    </section>
+  </main>
+
+  <footer id="footer">Журнал тренувань</footer>
+</div>
+<script src="../config.js"></script>
+<script>
+(function () {
+  const API = (window.TRAINER_API || "").trim();
+  const $ = (s) => document.querySelector(s);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const DEF = {
+    plates: ["Розклад", "Абонементи", "Борги", "Нагадування"],
+    features: [["Розклад на день, тиждень і місяць", "Персональні, спліт і групові тренування. Повтор щотижня одним натиском, переноси з історією."], ["Абонементи без зошита", "Видно, скільки проведено, заплановано й лишилось. Коли лишається 1–2 тренування — нагадування продати новий."], ["Оплати й борги", "Хто заплатив, хто винен і скільки. Нагадування боржнику — одним натиском у Telegram або Viber."], ["Бот для вас і клієнтів", "Зранку план дня, ввечері підсумок. Клієнти отримують нагадування з кнопками «Буду» і «Не зможу»."], ["Програма й прогрес", "Вправи з підходами й вагою, заміри тіла й графік ваги в картці кожного клієнта."], ["Гроші під контролем", "Дохід, витрати на зал і інвентар, чистий прибуток і ціль на місяць."]],
+    steps: [["Зареєструйтесь", "Номер телефону й пароль — і журнал готовий."], ["Додайте клієнтів", "Імʼя, телефон, ціна тренування."], ["Записуйте тренування", "Решту бот і журнал зроблять самі."]],
+    faq: [["Чи бачать інші тренери моїх клієнтів?", "Ні. Кожен тренер бачить лише свої дані."], ["Що буде, коли закінчиться пробний період?", "Журнал залишиться доступним для перегляду. Щоб записувати далі, оберіть тариф."], ["Чи працює на iPhone і Android?", "Так. Відкрийте сайт у браузері й додайте іконку на головний екран."], ["Як оплатити?", "Карткою через monobank. Підписка продовжується після підтвердження оплати."]],
+  };
+  // адреса застосунку: на своєму домені — app.<домен>, на технічній адресі — корінь сайту
+  function appBase(appDomain) {
+    const h = location.hostname;
+    if (/appwrite\.network$/.test(h) || h === "localhost" || /^[\d.]+$/.test(h)) return location.origin + "/";
+    if (appDomain) return "https://" + appDomain + "/";
+    return "https://app." + h.replace(/^www\./, "") + "/";
+  }
+  function setLinks(appDomain) { const base = appBase(appDomain); document.querySelectorAll("[data-app]").forEach((a) => { a.href = base + (a.dataset.app || ""); }); }
+  const COLORS = ["c0", "c1", "c2", "c3"];
+  function render(c, extra) {
+    if (c.hero_title) { $("#hero-title").textContent = c.hero_title; document.title = c.hero_title + " — Журнал тренувань"; }
+    if (c.hero_sub) $("#hero-sub").textContent = c.hero_sub;
+    if (c.cta) $("#cta").textContent = c.cta;
+    if (extra && extra.trial_days) $("#trial").textContent = `${extra.trial_days} днів з усіма можливостями, без картки`;
+    // диски: найбільші — біля центру, менші — до країв; одні й ті ж з обох боків
+    const pl = (c.plates && c.plates.length ? c.plates : DEF.plates).slice(0, 4);
+    const plates = pl.map((t, i) => `<div class="plate ${COLORS[i % 4]} s${i}">${esc(t)}</div>`).join("") + '<div class="collar"></div>';
+    $(".side.l").innerHTML = plates; $(".side.r").innerHTML = plates;
+    $(".side.l").setAttribute("aria-hidden", "true");
+    $("#features").innerHTML = (c.features || DEF.features).map((f, i) => `<li style="--c:var(--${["red", "blue", "yellow", "green"][i % 4]})"><div><h3>${esc(f[0])}</h3><p>${esc(f[1] || "")}</p></div></li>`).join("");
+    $("#steps").innerHTML = (c.steps || DEF.steps).map((s) => `<li><b>${esc(s[0])}</b><span>${esc(s[1] || "")}</span></li>`).join("");
+    $("#faq").innerHTML = (c.faq || DEF.faq).map((q) => `<details><summary>${esc(q[0])}</summary><p>${esc(q[1] || "")}</p></details>`).join("");
+    const links = [];
+    if (c.contact_telegram) { const t = c.contact_telegram.replace(/^@|^https?:\/\/t\.me\//, ""); links.push(`<a href="https://t.me/${esc(t)}" target="_blank" rel="noopener">Telegram: @${esc(t)}</a>`); }
+    if (c.contact_phone) links.push(`<a href="tel:${esc(c.contact_phone.replace(/[^\d+]/g, ""))}">${esc(c.contact_phone)}</a>`);
+    $("#links").innerHTML = links.join("");
+    if (c.footer) $("#footer").textContent = c.footer;
+    if (extra) {
+      $("#p-basic").textContent = extra.price_basic ? extra.price_basic.toLocaleString("uk-UA") : "—";
+      $("#p-pro").textContent = extra.price_pro ? extra.price_pro.toLocaleString("uk-UA") : "—";
+      if (!extra.price_basic && !extra.price_pro) $("#prices-block").hidden = true;
+    }
+  }
+  render(DEF);
+  setLinks("");
+  requestAnimationFrame(() => setTimeout(() => $("#barbell").classList.remove("loading"), 120));
+  async function api(action, body = {}) {
+    if (!API) return { ok: false, error: "Сервер не налаштований" };
+    try { const r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action, ...body }) }); return await r.json(); }
+    catch { return { ok: false, error: "Немає зʼєднання. Перевірте інтернет і спробуйте ще раз." }; }
+  }
+  api("landing").then((j) => { if (j.ok) { render(j.content, j); setLinks(j.app_domain); } });
+  $("#lead").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target, btn = f.querySelector("button"), msg = $("#lead-msg");
+    const data = { name: f.name.value.trim(), phone: f.phone.value.trim(), msg: f.msg.value.trim() };
+    if (!data.name || !data.phone) { msg.textContent = "Вкажіть імʼя й телефон або нік у Telegram"; return; }
+    btn.disabled = true; msg.textContent = "Надсилаю…";
+    const j = await api("landing_lead", data);
+    btn.disabled = false;
+    if (j.ok) { f.reset(); msg.textContent = "Заявку надіслано. Звʼяжемося з вами найближчим часом."; }
+    else msg.textContent = j.error || "Не вдалося надіслати. Спробуйте ще раз.";
+  });
+})();
+</script>
+</body>
+</html>

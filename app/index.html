@@ -2,6 +2,10 @@
 <html lang="uk">
 <head>
 <meta charset="utf-8">
+<script>
+// На власному домені (без «app.») відкриваємо лендінг; застосунок — на app.<домен> і на технічній адресі
+(function () { var h = location.hostname; if (!/^app\./.test(h) && !/appwrite\.network$/.test(h) && h !== "localhost" && !/^[\d.]+$/.test(h)) location.replace("/landing/"); })();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Журнал тренувань</title>
 <meta name="theme-color" content="#f6f7f5">

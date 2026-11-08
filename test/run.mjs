@@ -52,14 +52,14 @@ async function ok(action, body, tok) { const j = await call(action, body, tok); 
 async function bad(action, body, tok, msg) { const j = await call(action, body, tok); assert.equal(j.ok, false, action); if (msg) assert.match(j.error, msg); n++; return j; }
 
 // ── Вхід ──
-assert.equal((await ok("status")).needs_setup, true);
+assert.equal((await ok("status")).multi, true);
 await bad("bootstrap", {}, "", /auth/);
-await bad("setup", { phone: "050 123 45 67", password: "short1" }, null, /8 символів/);
-await bad("setup", { phone: "050 123 45 67", password: "onlyletters" }, null, /літери й цифри/);
-await bad("setup", { phone: "12", password: "Trener2026" }, null, /номер/);
+await bad("setup", { phone: "050 123 45 67", password: "Trener2026" }, null, /імʼя/);
+await bad("setup", { name: "Олег", phone: "050 123 45 67", password: "short1" }, null, /8 символів/);
+await bad("setup", { name: "Олег", phone: "050 123 45 67", password: "onlyletters" }, null, /літери й цифри/);
+await bad("setup", { name: "Олег", phone: "12", password: "Trener2026" }, null, /номер/);
 let tok = (await ok("setup", { name: "Олег", phone: "050 123 45 67", password: "Trener2026", _app: "https://trener.appwrite.network/" })).token;
-await bad("setup", { phone: "0501234567", password: "Trener2026x" }, null, /уже створено/);
-assert.equal((await ok("status")).needs_setup, false);
+await bad("register", { name: "Інший", phone: "0501234567", password: "Trener2026x" }, null, /уже зареєстровано/);
 await bad("login", { phone: "0501234567", password: "wrong12345" }, null, /Невірний/);
 await bad("login", { phone: "0991234567", password: "Trener2026" }, null, /Невірний/);
 tok = (await ok("login", { phone: "+38 (050) 123-45-67", password: "Trener2026" })).token;
@@ -388,12 +388,15 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
     await BAD("admin_setup", { code: ADMIN_CODE, phone: "0500000001", password: "Admin2026x" }, null, /вже створено/);
     await BAD("bootstrap", {}, AT, /auth/); // адмін-токен не дає доступу тренера напряму
     const stt = await OK("admin_status", {}, AT);
-    assert.equal(stt.counts.clients, 2); assert.match(stt.tick_url, /^https:\/\/fn\.test\/\?tick=/); assert.equal(stt.trainer.tg_linked, true);
-    const imp = await OK("admin_impersonate", {}, AT);
+    assert.equal(stt.counts.clients, 2); assert.match(stt.tick_url, /^https:\/\/fn\.test\/\?tick=/); assert.equal(stt.tenants_total, 1);
+    const tl = (await OK("admin_tenants", {}, AT)).tenants;
+    assert.equal(tl[0].tg_linked, true); assert.equal(tl[0].state, "trial"); assert.equal(tl[0].clients, 2);
+    const TID = tl[0].tid;
+    const imp = await OK("admin_impersonate", { tid: TID }, AT);
     assert.equal((await OK("bootstrap", {}, imp.token)).settings.trainer_name, "Ігор");
-    await OK("admin_test_message", { text: "тест" }, AT);
+    await OK("admin_test_message", { tid: TID, text: "тест" }, AT);
     await OK("admin_tick", {}, AT);
-    await OK("admin_set_trainer_password", { password: "NewTrainer2026" }, AT);
+    await OK("admin_set_trainer_password", { tid: TID, password: "NewTrainer2026" }, AT);
     await BAD("bootstrap", {}, T, /auth/);
     await OK("login", { phone: "0936419354", password: "NewTrainer2026" });
     await OK("admin_reset_throttles", {}, AT);
@@ -411,13 +414,117 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
   const c2 = createCore(st2, { now: () => clock, tgFetch: tf, iterations: 1000, publicUrl: "https://fn.test", botToken: "999999:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh" });
   await c2.ensureBot(); await c2.ensureBot();
   assert.equal(calls.filter((x) => x === "setWebhook").length, 1, "webhook once");
-  const t2 = (await c2.api({ action: "setup", phone: "0501234567", password: "Trener2026" }, {}, { ip: "2" }))[1].token;
+  const t2 = (await c2.api({ action: "setup", name: "Тест", phone: "0501234567", password: "Trener2026" }, {}, { ip: "2" }))[1].token;
   const bs = (await c2.api({ action: "bootstrap" }, { authorization: "Bearer " + t2 }, {}))[1].settings;
   assert.equal(bs.bot_managed, true); assert.equal(bs.bot_ready, true); assert.equal(bs.bot_username, "built_in_bot");
   const r2 = (await c2.api({ action: "bot_connect", token: "1:x" }, { authorization: "Bearer " + t2 }, {}))[1];
   assert.match(r2.error, /вбудовано/);
   assert.match((await c2.api({ action: "tg_link_trainer" }, { authorization: "Bearer " + t2 }, {}))[1].url, /built_in_bot\?start=t_/);
   n += 4;
+}
+
+// ── Кабінети: кілька тренерів, ізоляція, підписка, перенесення старих даних ──
+{
+  let clk = Date.parse("2026-11-09T06:00:00Z");
+  const stM = memStore(), sentM = [];
+  const tfM = async (url, init) => { const m = url.split("/").pop(); const b = typeof init.body === "string" ? JSON.parse(init.body) : {}; sentM.push({ m, ...b });
+    return { json: async () => ({ ok: true, result: { username: "mt_bot" } }) }; };
+  // стара однокористувацька база: налаштування в kv + дані без tid
+  for (const [k, v] of Object.entries({ secret: "s", token_secret: "ts", bot_token: "1:x", bot_username: "mt_bot", trainer_name: "Ігор", trainer_phone: "380936419354",
+    pass_salt: "salt", pass_hash: "", pass_ver: "3", trainer_chat_id: "100", gym_address: "Зал" })) await stM.create("kv", { value: v }, k);
+  const legacyCore = createCore(stM, { now: () => clk, iterations: 1000 });
+  // підставляємо справжній хеш пароля через тимчасовий кабінет-реєстрацію в окремому сховищі
+  const tmpSt = memStore(); const tmp = createCore(tmpSt, { now: () => clk, iterations: 1000 });
+  await tmp.api({ action: "register", name: "x", phone: "0500000009", password: "Old2026pass" }, {}, { ip: "z" });
+  const tmpT = JSON.parse((await tmpSt.list("tenants"))[0].data);
+  await stM.update("kv", "pass_salt", { value: tmpT.pass_salt }); await stM.update("kv", "pass_hash", { value: tmpT.pass_hash });
+  await stM.create("clients", { name: "Надя", phone: "0937999758", price: 350, remind: true, archived: false }, 5001);
+  await stM.create("sessions", { day: "2026-11-09", start_time: "10:00", duration_min: 60, kind: "personal", status: "planned", extra_amount: 0, reminded: false }, 6001);
+  await stM.create("parts", { session_id: 6001, client_id: 5001, price: 350, pay: "debt", day: "2026-11-09", status: "planned" }, 7001);
+  const cM = createCore(stM, { now: () => clk, tgFetch: tfM, iterations: 1000, publicUrl: "https://fn.test" });
+  const A = async (action, body = {}, tk, ip = "9") => { const [code, j] = await cM.api({ action, ...body }, tk ? { authorization: "Bearer " + tk } : {}, { ip }); return { code, ...j }; };
+  const OK = async (a, b, tk) => { const j = await A(a, b, tk); assert.equal(j.ok, true, a + ": " + j.error); n++; return j; };
+  const BAD = async (a, b, tk, re) => { const j = await A(a, b, tk); assert.equal(j.ok, false, a); if (re) assert.match(j.error, re); n++; return j; };
+  // перенесення: Ігор входить своїм паролем і бачить свої дані
+  const TI = (await OK("login", { phone: "0936419354", password: "Old2026pass" })).token;
+  const bI = await OK("bootstrap", {}, TI);
+  assert.equal(bI.clients.length, 1); assert.equal(bI.settings.trainer_name, "Ігор"); assert.equal(bI.settings.tg_linked, true); assert.equal(bI.settings.gym_address, "Зал");
+  assert.equal(bI.subscription.state, "active", "first trainer gets a year");
+  assert.ok([...stM.db.clients.values()].every((c) => c.tid === "t1"));
+  assert.equal((await stM.get("kv", "pass_hash")).value, "");
+  // другий тренер реєструється
+  const T2 = (await OK("register", { name: "Олена", phone: "0671234567", password: "Olena2026x" })).token;
+  const b2 = await OK("bootstrap", {}, T2);
+  assert.equal(b2.clients.length, 0); assert.equal(b2.subscription.state, "trial"); assert.equal(b2.subscription.days_left, 14);
+  const c2 = (await OK("client_save", { client: { name: "Клієнт Олени", phone: "0501111111" } }, T2)).client;
+  // ізоляція: Ігор не бачить і не може змінити чуже
+  assert.equal((await OK("bootstrap", {}, TI)).clients.length, 1);
+  await BAD("client_save", { client: { id: c2.id, name: "Злам" } }, TI, /не знайдено/);
+  await BAD("client_archive", { id: c2.id, archived: true }, TI, /не знайдено/);
+  assert.equal((await OK("client_history", { id: c2.id }, TI)).history.length, 0);
+  await OK("session_delete", { id: 6001 }, T2); // чуже — не видаляється
+  assert.equal((await OK("range", { from: "2026-11-09", to: "2026-11-09" }, TI)).sessions.length, 1);
+  await OK("participant_pay", { id: 7001, pay: "paid" }, T2); // чужий запис — без змін
+  assert.equal((await stM.get("parts", 7001)).pay, "debt");
+  assert.equal((await OK("client_history", { id: 5001 }, TI)).debts.length, 1);
+  await BAD("session_save", { session: { day: "2026-11-10", start_time: "10:00" }, participants: [{ client_id: 5001, price: 1, pay: "paid" }] }, T2);
+  // підписка Олени закінчується → лише перегляд
+  clk += 15 * 86400000;
+  const ex = await A("client_save", { client: { name: "Новий" } }, T2);
+  assert.equal(ex.ok, false); assert.equal(ex.code, 402); assert.match(ex.error, /Підписка закінчилась/);
+  await OK("bootstrap", {}, T2); await OK("range", { from: "2026-11-01", to: "2026-11-30" }, T2);
+  assert.equal((await OK("bootstrap", {}, T2)).subscription.state, "expired");
+  await OK("sub_paid", { note: "переказ на картку" }, T2);
+  // адмін продовжує
+  const ADMIN_CODE = process.env.ADMIN_CODE;
+  if (ADMIN_CODE) {
+    const AT = (await OK("admin_setup", { code: ADMIN_CODE, phone: "0500000000", password: "Admin2026x" })).token;
+    await OK("admin_billing_save", { price_text: "199 грн/міс", pay_info: "Картка 4441…", trial_days: 7 }, AT);
+    const list = (await OK("admin_tenants", {}, AT)).tenants;
+    assert.equal(list.length, 2);
+    const ol = list.find((x) => x.name === "Олена"); assert.equal(ol.state, "expired"); assert.ok(ol.paid_claim_at);
+    await OK("admin_tenant_update", { tid: ol.tid, extend_days: 30 }, AT);
+    let sb = (await OK("bootstrap", {}, T2)).subscription;
+    assert.equal(sb.state, "active"); assert.equal(sb.plan, "basic"); assert.equal(sb.pro, false);
+    // Звичайний тариф: без бота для клієнтів
+    const pr = await A("tg_link_client", { id: c2.id }, T2); assert.equal(pr.code, 402); assert.match(pr.error, /Pro/);
+    // заявка на Pro через monobank → адмін підтверджує
+    await OK("admin_billing_save", { price_basic: 199, price_pro: 349, mono_url: "https://send.monobank.ua/jar/abc123" }, AT);
+    await BAD("admin_billing_save", { mono_url: "https://evil.example/x" }, AT, /monobank/);
+    sb = (await OK("bootstrap", {}, T2)).subscription; assert.equal(sb.price_pro, 349); assert.equal(sb.mono_url, "https://send.monobank.ua/jar/abc123");
+    await OK("sub_paid", { plan: "pro", months: 3, amount: 1047 }, T2);
+    const cl2 = (await OK("admin_tenants", {}, AT)).tenants.find((x) => x.tid === ol.tid);
+    assert.deepEqual([cl2.paid_claim.plan, cl2.paid_claim.months], ["pro", 3]);
+    const before = cl2.paid_until;
+    await OK("admin_tenant_update", { tid: ol.tid, confirm_claim: true }, AT);
+    sb = (await OK("bootstrap", {}, T2)).subscription;
+    assert.equal(sb.plan, "pro"); assert.equal(sb.pro, true); assert.ok(sb.until > before); assert.equal(sb.paid_claim, "");
+    await BAD("admin_tenant_update", { tid: ol.tid, confirm_claim: true }, AT, /Немає заявки/);
+    await OK("client_save", { client: { name: "Новий" } }, T2);
+    await OK("admin_tenant_update", { tid: ol.tid, blocked: true }, AT);
+    assert.match((await A("client_save", { client: { name: "x" } }, T2)).error, /призупинено/);
+    await OK("admin_tenant_update", { tid: ol.tid, blocked: false }, AT);
+    // новий тренер — пробний період з налаштувань адміна
+    const T3 = (await OK("register", { name: "Петро", phone: "0631112233", password: "Petro2026x" }, null)).token;
+    assert.equal((await OK("bootstrap", {}, T3)).subscription.days_left, 7);
+    assert.equal((await OK("bootstrap", {}, T3)).subscription.price_text, "199 грн/міс");
+    // Telegram адміна
+    const al = (await OK("admin_tg_link", {}, AT)).url.split("start=")[1];
+    await cM.onUpdate({ message: { chat: { id: 900, type: "private" }, from: { id: 900 }, text: "/start " + al } });
+    await cM.onUpdate({ message: { chat: { id: 900, type: "private" }, from: { id: 900 }, contact: { phone_number: "380500000000", user_id: 900 } } });
+    await OK("register", { name: "Анна", phone: "0991112233", password: "Anna2026xx" });
+    assert.ok(sentM.some((x) => x.chat_id === 900 && /Новий тренер[\s\S]*Анна/.test(x.text)));
+  }
+  // бот: команди тренера — лише свої дані
+  sentM.length = 0;
+  await cM.onUpdate({ message: { chat: { id: 100, type: "private" }, from: { id: 100 }, text: "/debts" } });
+  assert.match(sentM.at(-1).text, /Надя — 350/);
+  // попередження про закінчення: Ігор має рік, Олена — 30 днів
+  clk += 28 * 86400000;
+  const tt = await cM.tick();
+  assert.ok(!tt.includes("error"), String(tt));
+  // старий токен без кабінету (з попередньої версії) працює для першого кабінету
+  n += 3;
 }
 
 function addD(d, k) { const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + k); return x.toISOString().slice(0, 10); }

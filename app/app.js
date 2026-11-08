@@ -59,7 +59,11 @@
   }
   async function must(action, body) {
     const j = await call(action, body);
-    if (!j.ok) { if (j.error !== "auth") toast(j.error || "Помилка", true); throw new Error(j.error); }
+    if (!j.ok) {
+      if (j.error !== "auth") toast(j.error || "Помилка", true);
+      if (j.reason === "subscription" || j.reason === "pro") setTimeout(() => handlers.subSheet(), 600);
+      throw new Error(j.error);
+    }
     return j;
   }
 
@@ -74,7 +78,7 @@
 
   async function refreshBase() {
     const j = await must("bootstrap");
-    st.clients = j.clients; st.packages = j.packages; st.settings = j.settings;
+    st.clients = j.clients; st.packages = j.packages; st.settings = j.settings; st.sub = j.subscription || null;
   }
 
   // ───── Каркас ─────
@@ -87,6 +91,8 @@
   function shell(inner, opts = {}) {
     root.innerHTML = `
       ${DEMO ? '<div class="demo-banner">Демо-режим: дані зберігаються лише на цьому пристрої</div>' : ""}
+      ${!DEMO && st.sub && !st.sub.writable ? `<button class="sub-banner" data-act="subSheet">🔒 ${st.sub.state === "blocked" ? "Кабінет призупинено" : "Підписка закінчилась — лише перегляд"} · <b>Продовжити</b></button>` : ""}
+      ${!DEMO && st.sub && st.sub.writable && st.sub.days_left <= 3 ? `<button class="sub-banner warn" data-act="subSheet">⏳ ${st.sub.state === "trial" ? "Пробний період" : "Підписка"}: ${st.sub.days_left ? `ще ${st.sub.days_left} дн.` : "останній день"} · <b>Оплатити</b></button>` : ""}
       <div class="app">${inner}</div>
       ${opts.fab ? `<button class="fab" data-act="${opts.fab.act}">${ICON.plus}${esc(opts.fab.label)}</button>` : ""}
       <nav class="nav" aria-label="Розділи"><div class="nav-in">
@@ -647,7 +653,13 @@
   // ───── Ще / налаштування ─────
   function renderMore() {
     const s = st.settings;
+    const sb = st.sub;
+    const subCard = sb ? `<button class="card sub-card" data-act="subSheet">
+        <span class="sub-l"><b>Підписка: ${sb.state === "trial" ? "пробний період" : sb.plan === "pro" ? "Pro" : "Звичайний"}</b>
+        <small>${sb.state === "expired" ? "закінчилась — лише перегляд" : sb.state === "blocked" ? "призупинено" : `діє до ${dLong(sb.until)} · ще ${sb.days_left} дн.`}${sb.paid_claim ? " · оплата на перевірці" : ""}</small></span>
+        <span class="tag ${sb.writable ? (sb.pro ? "ok" : "pkg") : "debt"}">${sb.pro ? "Pro" : sb.writable ? "Звичайний" : "🔒"}</span>${ICON.right}</button>` : "";
     shell(`<header class="top"><div class="top-row"><h1 class="title">Налаштування</h1></div></header>
+      ${subCard}
       <div class="card">
         <label class="field"><span>Ваше імʼя (бачать клієнти в нагадуваннях)</span><input id="s-name" value="${esc(s.trainer_name || "")}" placeholder="Наприклад, Олена"></label>
         <div class="row2">
@@ -772,6 +784,36 @@
       const c = clientById(+d.id);
       await must("client_archive", { id: c.id, archived: !c.archived }); await refreshBase(); toast(c.archived ? "Повернуто з архіву" : "Перенесено в архів"); st.clientId = null; render();
     },
+    subSheet() {
+      const sb = st.sub; if (!sb || DEMO) { toast("Підписка працює в робочій версії"); return; }
+      const pr = { basic: sb.price_basic, pro: sb.price_pro };
+      const sel = st.subSel || { plan: sb.plan === "pro" || sb.state === "trial" ? "pro" : "basic", months: 1 };
+      st.subSel = sel;
+      const amount = (pr[sel.plan] || 0) * sel.months;
+      const claim = (() => { try { return JSON.parse(sb.paid_claim || "null"); } catch { return null; } })();
+      const monoHref = sb.mono_url ? `${sb.mono_url}${sb.mono_url.includes("?") ? "&" : "?"}a=${amount}&t=${encodeURIComponent("Журнал тренувань " + (st.settings.phone_hint || "").replace(/\D/g, "").slice(-4))}` : "";
+      openSheet(`<h2>Підписка<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+        <div class="card" style="margin:0 0 12px"><b>${sb.state === "trial" ? "Пробний період (усі можливості Pro)" : sb.state === "expired" ? "Підписка закінчилась" : sb.state === "blocked" ? "Кабінет призупинено" : "Тариф " + (sb.plan === "pro" ? "Pro" : "Звичайний")}</b>
+          <div class="msub">${sb.until ? (sb.state === "expired" ? "закінчилась " : "діє до ") + dLong(sb.until) : ""}${sb.writable ? ` · ще ${sb.days_left} дн.` : " · журнал доступний для перегляду"}</div></div>
+        ${claim ? `<div class="card" style="margin:0 0 12px;background:color-mix(in srgb,#e8a33d 14%,var(--paper))">⏳ Оплата на перевірці: ${claim.plan === "pro" ? "Pro" : "Звичайний"} на ${claim.months} міс.${claim.amount ? ` · ${num(claim.amount)} грн` : ""}. Підписку продовжать після підтвердження.</div>` : ""}
+        <div class="plans">
+          <button class="plan-opt ${sel.plan === "basic" ? "on" : ""}" data-act="subPlan" data-plan="basic"><b>Звичайний</b><em>${pr.basic ? num(pr.basic) + " грн/міс" : "—"}</em><small>Розклад, клієнти, абонементи, оплати й борги, плани, заміри, програма, статистика, витрати</small></button>
+          <button class="plan-opt ${sel.plan === "pro" ? "on" : ""}" data-act="subPlan" data-plan="pro"><b>Pro</b><em>${pr.pro ? num(pr.pro) + " грн/міс" : "—"}</em><small>Усе зі Звичайного + Telegram-бот: план і підсумок дня, нагадування клієнтам з «Буду / Не зможу», нагадування про борги, резервні копії. Незабаром — форма запису для клієнтів.</small></button>
+        </div>
+        <div class="seg" role="group" aria-label="Термін" style="margin:12px 0">${[1, 3, 6, 12].map((m) => `<button data-act="subMonths" data-m="${m}" aria-pressed="${sel.months === m}">${m} міс.</button>`).join("")}</div>
+        <div class="sum-line"><span>До сплати</span><b>${num(amount)} грн</b></div>
+        ${monoHref ? `<a class="btn blue wide" href="${esc(monoHref)}" target="_blank" rel="noopener">Оплатити через monobank</a>` : '<p class="hint">Реквізити для оплати ще не налаштовані — напишіть у підтримку.</p>'}
+        ${sb.pay_info ? `<p class="hint" style="margin-top:10px">${esc(sb.pay_info)}</p>` : '<p class="hint" style="margin-top:10px">У коментарі до переказу вкажіть свій номер телефону.</p>'}
+        <button class="btn light wide" style="margin-top:8px" data-act="subPaid">Я оплатив</button>`);
+    },
+    subPlan(d) { st.subSel.plan = d.plan; handlers.subSheet(); },
+    subMonths(d) { st.subSel.months = +d.m; handlers.subSheet(); },
+    async subPaid() {
+      const sel = st.subSel, pr = { basic: st.sub.price_basic, pro: st.sub.price_pro };
+      const r = await must("sub_paid", { plan: sel.plan, months: sel.months, amount: (pr[sel.plan] || 0) * sel.months });
+      await refreshBase(); closeSheet(); render();
+      toast(r.notified ? "Дякуємо! Підтвердимо оплату найближчим часом" : "Дякуємо! Заявку збережено");
+    },
     pkgHelp() {
       openSheet(`<h2>Як працюють абонементи<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
         <ol class="help">
@@ -819,7 +861,7 @@
         <div class="foot"><button class="btn blue" data-act="saveGoal">Зберегти</button></div>`, (bg) => $("#g-goal", bg).focus());
     },
     async saveGoal() { await must("settings_save", { settings: { month_goal: +$("#g-goal").value || 0 } }); closeSheet(); await refreshBase(); toast("Ціль збережено"); render(); },
-    async backupNow() { if (DEMO) { toast("Резервна копія працює в робочій версії"); return; } await must("backup_now"); await refreshBase(); toast("Файл надіслано у ваш Telegram"); render(); },
+    async backupNow() { if (st.sub && !st.sub.pro) { toast("Резервні копії в Telegram — у тарифі Pro", true); return handlers.subSheet(); } if (DEMO) { toast("Резервна копія працює в робочій версії"); return; } await must("backup_now"); await refreshBase(); toast("Файл надіслано у ваш Telegram"); render(); },
     async toggleBackup(d, el) { await must("settings_save", { settings: { backup_weekly: el.checked } }); await refreshBase(); toast(el.checked ? "Щотижнева копія увімкнена" : "Щотижнева копія вимкнена"); },
     async payDebt(d) { await must("participant_pay", { id: +d.id, pay: "paid" }); toast("Борг закрито"); await refreshBase(); render(); },
     newPackage() { packageSheet(null, st.clientId); },
@@ -840,6 +882,7 @@
     },
     async clientUnlink(d) { await must("tg_unlink_client", { id: +d.id }); toast("Telegram клієнта відʼєднано"); await refreshBase(); render(); },
     async clientLink(d) {
+      if (st.sub && !st.sub.pro) { toast("Бот для клієнтів — у тарифі Pro", true); return handlers.subSheet(); }
       const j = await must("tg_link_client", { id: +d.id });
       const c = clientById(+d.id);
       const text = `Привіт! Щоб отримувати нагадування про тренування, відкрийте посилання й підтвердіть свій номер: ${j.url}`;
@@ -963,8 +1006,8 @@
     const m = location.hash.match(/reset=([\w-]+)/);
     let mode = m ? "reset" : s.ok && s.needs_setup ? "setup" : "login";
     const T = {
-      setup: ["Створіть вхід", "Номер телефону й пароль, якими ви входитимете в журнал тренувань."],
-      login: [`Вітаю${s.trainer_name ? ", " + esc(s.trainer_name) : ""}!`, "Увійдіть за номером телефону й паролем."],
+      setup: ["Реєстрація тренера", `Журнал тренувань, клієнти, абонементи й статистика. ${s.trial_days || 14} днів безкоштовно з усіма можливостями.`],
+      login: ["Журнал тренувань", "Увійдіть за номером телефону й паролем."],
       forgot: ["Забули пароль?", "Надішлемо посилання для нового пароля у ваш Telegram-бот (якщо його підключено)."],
       reset: ["Новий пароль", "Придумайте новий пароль. Інші пристрої вийдуть із системи."],
     };
@@ -977,8 +1020,9 @@
         ${mode !== "forgot" ? f("l-pass", mode === "login" ? "Пароль" : "Пароль (від 8 символів, літери й цифри)", "password", mode === "login" ? "current-password" : "new-password") : ""}
         ${mode === "setup" || mode === "reset" ? f("l-pass2", "Повторіть пароль", "password", "new-password") : ""}
         <div class="err" role="alert">${esc(err)}</div>${info ? `<div class="ok-msg">${esc(info)}</div>` : ""}
-        <button class="btn blue wide" type="submit">${{ setup: "Створити", login: "Увійти", forgot: "Надіслати посилання", reset: "Зберегти пароль" }[mode]}</button>
-        ${mode === "login" ? '<button class="btn light wide" type="button" data-m="forgot" style="margin-top:10px">Забули пароль?</button>' : ""}
+        <button class="btn blue wide" type="submit">${{ setup: "Зареєструватися", login: "Увійти", forgot: "Надіслати посилання", reset: "Зберегти пароль" }[mode]}</button>
+        ${mode === "login" ? '<button class="btn light wide" type="button" data-m="forgot" style="margin-top:10px">Забули пароль?</button><button class="btn light wide" type="button" data-m="setup" style="margin-top:10px">Я новий тренер — зареєструватися</button>' : ""}
+        ${mode === "setup" ? '<button class="btn light wide" type="button" data-m="login" style="margin-top:10px">У мене вже є вхід</button><p class="hint" style="margin-top:12px;text-align:center">Кожен тренер бачить лише свої дані.</p>' : ""}
         ${mode === "forgot" || mode === "reset" ? '<button class="btn light wide" type="button" data-m="login" style="margin-top:10px">Назад до входу</button>' : ""}
       </form>`;
       const first = root.querySelector("input"); if (first) first.focus();
@@ -990,7 +1034,7 @@
       const v = (id) => ($("#" + id) ? $("#" + id).value : "");
       if ((mode === "setup" || mode === "reset") && v("l-pass") !== v("l-pass2")) return draw("Паролі не збігаються");
       const btn = root.querySelector("button[type=submit]"); btn.disabled = true;
-      const j = mode === "setup" ? await call("setup", { name: v("l-name").trim(), phone: v("l-phone"), password: v("l-pass") })
+      const j = mode === "setup" ? await call("register", { name: v("l-name").trim(), phone: v("l-phone"), password: v("l-pass") })
         : mode === "login" ? await call("login", { phone: v("l-phone"), password: v("l-pass") })
         : mode === "forgot" ? await call("forgot", { phone: v("l-phone") })
         : await call("reset", { code: m ? m[1] : "", password: v("l-pass") });
@@ -1040,8 +1084,13 @@
     root.innerHTML = `<div class="app admin">
       <header class="top"><div class="top-row"><h1 class="title">🛠 Адмінка</h1><button class="chip-btn" data-a="refresh">Оновити</button></div></header>
       ${msg ? `<div class="card" role="status">${esc(msg)}</div>` : ""}
-      <div class="card"><h3>Тренер</h3><div class="rows">${row("Імʼя", esc(j.trainer.name || "—"))}${row("Номер входу", esc(j.trainer.phone || "—"))}${row("Номер Telegram", esc(j.trainer.tg_phone || "—"))}${row("Пароль", j.trainer.has_password ? "є" : "немає")}${row("Telegram", j.trainer.tg_linked ? "✅ підключено" : "❌ ні")}</div>
-        <div class="actions" style="margin-top:12px;flex-wrap:wrap"><button class="btn blue" data-a="imp">Увійти як тренер</button><button class="btn light" data-a="pass">Новий пароль тренеру</button></div></div>
+      <div class="card"><h3 class="row-h"><span>Тренери (${j.tenants_total})</span><span class="msub">${Object.entries(j.by_state || {}).map(([k, v]) => ({ trial: "пробні", active: "оплачені", expired: "закінчились", blocked: "призупинені" }[k] || k) + ": " + v).join(" · ")}</span></h3><div id="a-ten"><div class="none">Завантаження…</div></div></div>
+      <div class="card"><h3>Тарифи й оплата</h3>
+        <div class="row2"><label class="field"><span>Звичайний, грн/міс</span><input id="b-basic" type="number" inputmode="numeric" value="${j.billing.price_basic || ""}"></label><label class="field"><span>Pro, грн/міс</span><input id="b-pro" type="number" inputmode="numeric" value="${j.billing.price_pro || ""}"></label></div>
+        <label class="field"><span>Посилання на банку monobank</span><input id="b-mono" value="${esc(j.billing.mono_url)}" placeholder="https://send.monobank.ua/jar/…"></label>
+        <label class="field"><span>Підказка до оплати (бачить тренер)</span><input id="b-info" value="${esc(j.billing.pay_info)}" placeholder="У коментарі вкажіть свій номер телефону"></label>
+        <label class="field"><span>Пробний період, днів</span><input id="b-trial" type="number" inputmode="numeric" value="${j.billing.trial_days}"></label>
+        <div class="actions"><button class="btn blue" data-a="bill">Зберегти</button><button class="btn light" data-a="atg">${j.admin_tg ? "✅ Сповіщення в Telegram" : "Сповіщення мені в Telegram"}</button></div></div>
       <div class="card"><h3>Дані</h3><div class="rows">${Object.entries(j.counts).map(([k, v]) => row({ clients: "Клієнти", packages: "Абонементи", sessions: "Тренування", parts: "Учасники тренувань", moves: "Переноси", plans: "Плани", expenses: "Витрати", measures: "Заміри" }[k] || k, v)).join("")}</div></div>
       <div class="card"><h3>Бот</h3><div class="rows">${row("Бот", j.bot.username ? "@" + esc(j.bot.username) : "—")}${row("Вбудований", j.bot.managed ? "так" : "ні")}${row("Webhook", j.bot.webhook ? esc(j.bot.webhook.url) : "—")}${row("У черзі", j.bot.webhook ? j.bot.webhook.pending : "—")}${j.bot.webhook && j.bot.webhook.last_error ? row("Остання помилка", esc(j.bot.webhook.last_error) + " · " + dt(j.bot.webhook.last_error_at)) : ""}</div>
         <div class="actions" style="margin-top:12px;flex-wrap:wrap"><button class="btn light" data-a="msg">Тест-повідомлення тренеру</button><button class="btn light" data-a="backup">Резервна копія</button></div></div>
@@ -1053,14 +1102,40 @@
         ${j.errors.length ? `<ul class="errs">${j.errors.map((e) => `<li><small>${dt(e.at)} · ${esc(e.where)}</small><code>${esc(e.msg)}</code></li>`).join("")}</ul>` : '<div class="none">Помилок немає 👌</div>'}</div>
       <div style="padding:0 16px 32px;display:grid;gap:8px"><button class="btn light wide" data-a="exit">До журналу</button><button class="btn light wide" data-a="out">Вийти з адмінки</button><button class="btn red wide" data-a="outall">Вийти з адмінки на всіх пристроях</button></div>
     </div>`;
+    acall("admin_tenants").then((t) => {
+      const box = $("#a-ten"); if (!box) return;
+      if (!t.ok) { box.innerHTML = `<div class="none">${esc(t.error)}</div>`; return; }
+      const ST = { trial: ["пробний", "pkg"], active: ["оплачено", "ok"], expired: ["закінчилась", "debt"], blocked: ["призупинено", "debt"] };
+      box.innerHTML = t.tenants.length ? t.tenants.map((x) => `<div class="ten ${x.paid_claim ? "claim" : ""}">
+        <div class="row-h"><b>${esc(x.name || "без імені")}</b><span class="tag ${ST[x.state][1]}">${ST[x.state][0]}${x.state === "active" ? " · " + (x.plan === "pro" ? "Pro" : "Звич.") : ""}</span></div>
+        <div class="msub">${esc(x.phone)} · ${x.tg_linked ? "Telegram ✅" : "без Telegram"} · до ${x.until || "—"} · клієнтів ${x.clients} · трен. за 30 дн. ${x.sessions_30d}${x.last_seen ? " · був(ла) " + x.last_seen : ""}</div>
+        ${x.paid_claim ? `<div class="claim-box">💳 Заявка: ${x.paid_claim.plan === "pro" ? "Pro" : "Звичайний"} на ${x.paid_claim.months} міс.${x.paid_claim.amount ? " · " + x.paid_claim.amount + " грн" : ""} · ${dt(x.paid_claim_at)}
+          <div class="actions"><button class="btn blue" data-a="conf" data-tid="${x.tid}">Підтвердити оплату</button><button class="btn light" data-a="rej" data-tid="${x.tid}">Не знайшов</button></div></div>` : ""}
+        <div class="actions ten-act">
+          <button class="btn light" data-a="imp" data-tid="${x.tid}">Увійти як</button>
+          <button class="btn light" data-a="ext" data-tid="${x.tid}">+ днів</button>
+          <button class="btn light" data-a="plan" data-tid="${x.tid}" data-plan="${x.plan === "pro" ? "basic" : "pro"}">→ ${x.plan === "pro" ? "Звичайний" : "Pro"}</button>
+          <button class="btn light" data-a="msg" data-tid="${x.tid}">Написати</button>
+          <button class="btn light" data-a="pass" data-tid="${x.tid}">Пароль</button>
+          <button class="btn ${x.state === "blocked" ? "light" : "red"}" data-a="blk" data-tid="${x.tid}" data-v="${x.state === "blocked" ? "0" : "1"}">${x.state === "blocked" ? "Відновити" : "Призупинити"}</button>
+        </div></div>`).join("") : '<div class="none">Тренерів ще немає</div>';
+    });
     root.onclick = async (e) => {
       const b = e.target.closest("[data-a]"); if (!b) return;
       const a = b.dataset.a, run = async (action, body, okMsg) => { const r = await acall(action, body); showAdmin(r.ok ? okMsg(r) : "⚠️ " + r.error); };
       if (a === "refresh") return showAdmin();
-      if (a === "imp") { const r = await acall("admin_impersonate"); if (!r.ok) return showAdmin("⚠️ " + r.error); token = r.token; localStorage.setItem("trainer-token", token); location.hash = ""; root.onclick = null; return start(); }
-      if (a === "pass") { const p = prompt("Новий пароль для тренера (від 8 символів, літери й цифри):"); if (p) return run("admin_set_trainer_password", { password: p }, () => "Пароль тренера змінено. Тренера на інших пристроях виведено."); return; }
-      if (a === "msg") return run("admin_test_message", { text: "Перевірка звʼязку" }, () => "Повідомлення надіслано тренеру");
-      if (a === "backup") return run("admin_backup", {}, () => "Резервну копію надіслано тренеру в Telegram");
+      if (a === "imp") { const r = await acall("admin_impersonate", { tid: b.dataset.tid }); if (!r.ok) return showAdmin("⚠️ " + r.error); token = r.token; localStorage.setItem("trainer-token", token); location.hash = ""; root.onclick = null; return start(); }
+      const tid = b.dataset.tid;
+      if (a === "pass") { const p = prompt("Новий пароль для тренера (від 8 символів, літери й цифри):"); if (p) return run("admin_set_trainer_password", { tid, password: p }, () => "Пароль тренера змінено. Тренера на інших пристроях виведено."); return; }
+      if (a === "msg") { const t = prompt("Текст повідомлення тренеру:", "Перевірка звʼязку"); if (t) return run("admin_test_message", { tid, text: t }, () => "Повідомлення надіслано"); return; }
+      if (a === "ext") { const n = prompt("На скільки днів продовжити?", "30"); if (n) return run("admin_tenant_update", { tid, extend_days: +n }, (r) => "Продовжено до " + r.tenant.paid_until); return; }
+      if (a === "conf") return run("admin_tenant_update", { tid, confirm_claim: true }, (r) => `Оплату підтверджено: ${r.tenant.plan === "pro" ? "Pro" : "Звичайний"} до ${r.tenant.paid_until}`);
+      if (a === "rej") return run("admin_tenant_update", { tid, reject_claim: true }, () => "Заявку відхилено, тренеру надіслано повідомлення");
+      if (a === "plan") return run("admin_tenant_update", { tid, plan: b.dataset.plan }, () => "Тариф змінено");
+      if (a === "blk") return run("admin_tenant_update", { tid, blocked: b.dataset.v === "1" }, () => (b.dataset.v === "1" ? "Кабінет призупинено" : "Кабінет відновлено"));
+      if (a === "bill") return run("admin_billing_save", { price_basic: +$("#b-basic").value || 0, price_pro: +$("#b-pro").value || 0, mono_url: $("#b-mono").value, pay_info: $("#b-info").value, trial_days: +$("#b-trial").value || 0 }, () => "Тарифи збережено");
+      if (a === "atg") { const r = await acall("admin_tg_link"); if (!r.ok) return showAdmin("⚠️ " + r.error); window.open(r.url, "_blank"); return toast("У Telegram: «Старт» → «Надіслати мій номер»"); }
+      if (a === "backup") return run("admin_backup", { tid }, () => "Резервну копію надіслано тренеру в Telegram");
       if (a === "tick") return run("admin_tick", {}, (r) => "Перевірку виконано: " + (r.done.length ? r.done.join(", ") : "нічого не треба було надсилати"));
       if (a === "thr") return run("admin_reset_throttles", {}, (r) => "Знято блокувань: " + r.cleared);
       if (a === "clr") return run("admin_clear_errors", {}, () => "Журнал помилок очищено");

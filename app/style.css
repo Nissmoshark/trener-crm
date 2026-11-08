@@ -362,3 +362,25 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .dt-wrap input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0; }
 .dt-wrap .dt-show { position: absolute; left: 12px; right: 8px; top: 0; bottom: 0; display: flex; align-items: center; pointer-events: none; font-size: 16px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dt-wrap .dt-show.empty { color: var(--muted); }
+
+/* Підписка */
+.sub-banner { display: block; width: calc(100% - 32px); margin: 8px 16px 0; border: 0; border-radius: 12px; padding: 10px 12px; background: color-mix(in srgb, var(--plate-red) 12%, var(--paper)); color: var(--ink); font: 600 14px var(--text); text-align: left; }
+.sub-banner.warn { background: color-mix(in srgb, #e8a33d 18%, var(--paper)); }
+.sub-card { display: flex; align-items: center; gap: 10px; width: calc(100% - 32px); border: 0; text-align: left; font: inherit; color: inherit; }
+.sub-card .sub-l { flex: 1; display: flex; flex-direction: column; }
+.sub-card small { color: var(--muted); font-size: 13px; }
+.sub-card svg { width: 20px; height: 20px; color: var(--muted); }
+.plans { display: grid; gap: 8px; }
+.plan-opt { text-align: left; border: 2px solid var(--line); background: var(--paper); border-radius: 14px; padding: 12px; display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; font: inherit; color: inherit; }
+.plan-opt.on { border-color: var(--plate-blue); box-shadow: 0 0 0 3px color-mix(in srgb, var(--plate-blue) 15%, transparent); }
+.plan-opt b { font: 700 16px var(--display); }
+.plan-opt em { font-style: normal; font-weight: 700; }
+.plan-opt small { grid-column: 1 / -1; color: var(--muted); font-size: 13px; line-height: 1.35; }
+/* Адмінка: тренери */
+.ten { border-top: 1px solid var(--line); padding: 10px 0; }
+.ten:first-child { border-top: 0; }
+.ten.claim { background: color-mix(in srgb, #e8a33d 10%, transparent); margin: 0 -8px; padding: 10px 8px; border-radius: 12px; }
+.claim-box { margin: 8px 0; font-size: 14px; }
+.ten-act { flex-wrap: wrap; margin-top: 8px; }
+.ten-act .btn { height: 34px; font-size: 13px; padding: 0 10px; }
+.row-h .tag { flex: none; }

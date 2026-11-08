@@ -3,47 +3,48 @@ export const DB = "trainer";
 
 // Схема колекцій: [ключ, тип, розмір|null, за замовчуванням]
 export const SCHEMA = {
+  tenants: { attrs: [["phone", "string", 32], ["chat", "string", 32], ["tg_phone", "string", 32], ["data", "string", 20000]], indexes: [["phone"], ["chat"]] },
   kv: { attrs: [["value", "string", 10000]], indexes: [] },
   clients: {
-    attrs: [["name", "string", 200], ["phone", "string", 32], ["price", "float"], ["notes", "string", 5000],
+    attrs: [["tid", "string", 32], ["name", "string", 200], ["phone", "string", 32], ["price", "float"], ["notes", "string", 5000],
       ["remind", "boolean", null, true], ["tg_chat_id", "string", 32], ["tg_code", "string", 32], ["archived", "boolean", null, false],
       ["program", "string", 10000]],
-    indexes: [["tg_code"], ["tg_chat_id"]],
+    indexes: [["tid"], ["tg_code"], ["tg_chat_id"]],
   },
   packages: {
-    attrs: [["client_id", "string", 32], ["title", "string", 200], ["sessions_total", "integer"], ["price", "float"],
+    attrs: [["tid", "string", 32], ["client_id", "string", 32], ["title", "string", 200], ["sessions_total", "integer"], ["price", "float"],
       ["paid", "boolean", null, true], ["bought_on", "string", 10], ["expires_on", "string", 10]],
-    indexes: [["client_id"]],
+    indexes: [["tid"], ["client_id"]],
   },
   sessions: {
-    attrs: [["day", "string", 10], ["start_time", "string", 5], ["duration_min", "integer"], ["kind", "string", 16],
+    attrs: [["tid", "string", 32], ["day", "string", 10], ["start_time", "string", 5], ["duration_min", "integer"], ["kind", "string", 16],
       ["title", "string", 200], ["status", "string", 16], ["extra_amount", "float"], ["note", "string", 2000], ["reminded", "boolean", null, false], ["series", "string", 32]],
-    indexes: [["day"], ["series"]],
+    indexes: [["tid"], ["day"], ["series"]],
   },
   parts: {
-    attrs: [["session_id", "string", 32], ["client_id", "string", 32], ["price", "float"], ["pay", "string", 16],
+    attrs: [["tid", "string", 32], ["session_id", "string", 32], ["client_id", "string", 32], ["price", "float"], ["pay", "string", 16],
       ["package_id", "string", 32], ["day", "string", 10], ["status", "string", 16], ["confirm", "string", 8]],
-    indexes: [["session_id"], ["client_id"], ["package_id"], ["day"]],
+    indexes: [["tid"], ["session_id"], ["client_id"], ["package_id"], ["day"]],
   },
   plans: {
-    attrs: [["day", "string", 10], ["time", "string", 5], ["duration_min", "integer"], ["title", "string", 200], ["place", "string", 200],
+    attrs: [["tid", "string", 32], ["day", "string", 10], ["time", "string", 5], ["duration_min", "integer"], ["title", "string", 200], ["place", "string", 200],
       ["note", "string", 2000], ["cat", "string", 16], ["remind_min", "integer"], ["reminded", "boolean", null, false], ["done", "boolean", null, false],
       ["series", "string", 32]],
-    indexes: [["day"], ["series"]],
+    indexes: [["tid"], ["day"], ["series"]],
   },
   expenses: {
-    attrs: [["day", "string", 10], ["amount", "float"], ["cat", "string", 16], ["note", "string", 300]],
-    indexes: [["day"]],
+    attrs: [["tid", "string", 32], ["day", "string", 10], ["amount", "float"], ["cat", "string", 16], ["note", "string", 300]],
+    indexes: [["tid"], ["day"]],
   },
   measures: {
-    attrs: [["client_id", "string", 32], ["day", "string", 10], ["weight", "float"], ["waist", "float"], ["hips", "float"], ["chest", "float"],
+    attrs: [["tid", "string", 32], ["client_id", "string", 32], ["day", "string", 10], ["weight", "float"], ["waist", "float"], ["hips", "float"], ["chest", "float"],
       ["fat", "float"], ["note", "string", 500]],
-    indexes: [["client_id"]],
+    indexes: [["tid"], ["client_id"]],
   },
   moves: {
-    attrs: [["session_id", "string", 32], ["from_day", "string", 10], ["from_time", "string", 5], ["to_day", "string", 10],
+    attrs: [["tid", "string", 32], ["session_id", "string", 32], ["from_day", "string", 10], ["from_time", "string", 5], ["to_day", "string", 10],
       ["to_time", "string", 5], ["reason", "string", 500], ["created_day", "string", 10]],
-    indexes: [["session_id"], ["created_day"]],
+    indexes: [["tid"], ["session_id"], ["created_day"]],
   },
 };
 // Поля, які зберігаються рядком, але назовні — числа (ідентифікатори)

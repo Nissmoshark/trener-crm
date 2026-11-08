@@ -465,7 +465,7 @@
         <button class="btn light wide" data-act="clientLink" data-id="${c.id}">${c.tg_linked ? "Посилання ще раз" : "Отримати посилання для клієнта"}</button>
         ${c.tg_linked ? `<button class="btn light wide" style="margin-top:8px" data-act="clientUnlink" data-id="${c.id}">Відʼєднати Telegram</button>` : ""}
       </div>
-      <div class="card"><h3>Історія</h3>${j.history.length ? `<ul class="hist">${j.history.slice(0, 60).map((h) => `<li><span>${dLong(h.day)} ${h.start_time} ${h.kind !== "personal" ? `<span class="tag moved">${KIND[h.kind]}</span>` : ""} ${h.status === "cancelled" ? '<span class="tag moved">скасовано</span>' : h.status === "no_show" ? '<span class="tag noshow">не прийшов</span>' : ""} ${h.pay === "debt" ? '<span class="tag debt">борг</span>' : h.pay === "package" ? '<span class="tag pkg">абонемент</span>' : ""}</span><span class="p">${num(h.price)}</span></li>`).join("")}</ul>` : '<div style="color:var(--muted);font-size:14px">Ще не тренувався</div>'}</div>
+      <div class="card"><h3>Історія</h3>${j.history.length ? `<ul class="hist">${j.history.slice(0, 60).map((h) => `<li><button class="mrow" data-act="openHist" data-id="${h.id}" data-day="${h.day}"><span>${dLong(h.day)} ${h.start_time} ${h.kind !== "personal" ? `<span class="tag moved">${KIND[h.kind]}</span>` : ""} ${h.status === "cancelled" ? '<span class="tag moved">скасовано</span>' : h.status === "no_show" ? '<span class="tag noshow">не прийшов</span>' : ""} ${h.pay === "debt" ? '<span class="tag debt">борг</span>' : h.pay === "package" ? '<span class="tag pkg">абонемент</span>' : ""}</span><span class="p">${num(h.price)}</span></button></li>`).join("")}</ul><p class="hint" style="margin:6px 0 0">Натисніть на тренування, щоб відкрити й змінити оплату.</p>` : '<div style="color:var(--muted);font-size:14px">Ще не тренувався</div>'}</div>
       <div style="padding:0 16px"><button class="btn light wide" data-act="archiveClient" data-id="${c.id}">${c.archived ? "Повернути з архіву" : "Перенести в архів"}</button></div>`;
   }
   // Заміри: остання цифра, зміна від першого заміру, міні-графік ваги
@@ -697,6 +697,10 @@
     openDay(d) { st.date = d.day; st.mode = "day"; render(); },
     newSession() { sessionSheet(null); },
     newSessionFor() { const c = clientById(st.clientId); sessionSheet(null); if (c) { addParticipant(c); drawSessionSheet(); } },
+    async openHist(d) {
+      const j = await must("range", { from: d.day, to: d.day });
+      const s = j.sessions.find((x) => x.id === +d.id); if (s) sessionSheet(s);
+    },
     async editSession(d) {
       const [from, to] = periodRange();
       const j = await must("range", { from, to });
@@ -874,9 +878,16 @@
     editPackage(d) { packageSheet(st.packages.find((p) => p.id === +d.id)); },
     async savePackage(d) {
       const v = (id) => $("#" + id).value;
-      await must("package_save", { package: { id: d.id ? +d.id : undefined, client_id: +d.client, sessions_total: v("p-n"), price: v("p-price"), bought_on: v("p-bought"), expires_on: v("p-exp"), title: v("p-title"), paid: $("#p-paid").checked } });
+      const r = await must("package_save", { package: { id: d.id ? +d.id : undefined, client_id: +d.client, sessions_total: v("p-n"), price: v("p-price"), bought_on: v("p-bought"), expires_on: v("p-exp"), title: v("p-title"), paid: $("#p-paid").checked } });
       const ret = pkgReturn; pkgReturn = null;
       await refreshBase();
+      if (!ret && r.eligible > 0) {
+        const bought = v("p-bought");
+        askConfirm(`У клієнта вже є ${r.eligible} трен. від ${dLong(bought)}, записаних без абонемента. Списати їх з цього абонемента? Ціна кожного стане ціною з абонемента.`, "Списати", async () => {
+          const a = await must("package_attach", { id: r.package.id }); closeSheet(); toast(`Списано з абонемента: ${a.attached}`); await refreshBase(); render();
+        });
+        return;
+      }
       if (ret && draft && draft.participants[ret.i]) { draft.participants[ret.i].pay = "package"; draft.participants[ret.i].package_id = null; drawSessionSheet(); toast("Абонемент оформлено — тренування спишеться з нього"); return; }
       closeSheet(); toast("Абонемент збережено"); render();
     },

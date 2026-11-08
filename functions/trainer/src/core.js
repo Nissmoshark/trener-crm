@@ -298,6 +298,11 @@ export function createCore(st, opts = {}) {
     const ss = new Map((await all("sessions", [["id", "in", ps.map((p) => p.session_id)]])).map((x) => [x.id, x]));
     return ps.map((p) => ({ part_id: p.id, day: p.day, time: ss.get(p.session_id)?.start_time ?? "", price: Number(p.price) })).sort((a, b) => a.day.localeCompare(b.day));
   }
+  async function eligibleForPkg(pk) {
+    return (await partsFor([["client_id", "eq", pk.client_id]]))
+      .filter((x) => x.pay !== "package" && x.status !== "cancelled" && x.day >= (pk.bought_on || "") && (!pk.expires_on || x.day <= pk.expires_on))
+      .sort((a, z) => a.day.localeCompare(z.day) || a.id - z.id);
+  }
   const num0 = (x) => (x === "" || x == null || !Number.isFinite(Number(x)) ? null : Number(x));
   function cleanProgram(x) {
     if (x == null || x === "") return null;
@@ -588,7 +593,22 @@ export function createCore(st, opts = {}) {
         for (const x of await partsFor([["package_id", "eq", p.id]])) await D.update("parts", x.id, { price: unit });
         return { package: row };
       }
-      return { package: await D.create("packages", vals, newId()) };
+      const row = await D.create("packages", vals, newId());
+      return { package: row, eligible: (await eligibleForPkg(row)).length };
+    },
+    // Списати з абонемента тренування, проведені/заплановані від дати покупки без абонемента
+    async package_attach(b) {
+      const pk = await D.get("packages", b.id);
+      if (!pk) throw new ApiError("Абонемент не знайдено");
+      const used = (await partsFor([["package_id", "eq", pk.id]])).filter((x) => x.status !== "cancelled").length;
+      let free = pk.sessions_total - used, n = 0;
+      const unit = round2(Number(pk.price) / pk.sessions_total);
+      for (const x of await eligibleForPkg(pk)) {
+        if (free <= 0) break;
+        await D.update("parts", x.id, { pay: "package", package_id: pk.id, price: unit });
+        free--; n++;
+      }
+      return { attached: n };
     },
     async package_delete(b) {
       for (const x of await partsFor([["package_id", "eq", b.id]])) await D.update("parts", x.id, { pay: "debt", package_id: null });

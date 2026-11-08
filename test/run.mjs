@@ -360,6 +360,15 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
   await OK("measure_save", { measure: { client_id: cl.id, day: "2026-11-09", weight: "70,5".replace(",", "."), waist: "" } }, T);
   const ms = (await OK("client_history", { id: cl.id }, T)).measures;
   assert.deepEqual(ms.map((m) => m.weight), [72.5, 70.5]); assert.equal(ms[1].waist, null);
+  // абонемент після вже проведених тренувань → списати їх
+  { const cl4 = (await OK("client_save", { client: { name: "Денис", price: 350 } }, T)).client;
+    await OK("session_save", { session: { day: "2026-11-07", start_time: "10:00" }, participants: [{ client_id: cl4.id, price: 350, pay: "paid" }] }, T);
+    await OK("session_save", { session: { day: "2026-11-01", start_time: "10:00" }, participants: [{ client_id: cl4.id, price: 350, pay: "paid" }] }, T);
+    const pr4 = await OK("package_save", { package: { client_id: cl4.id, sessions_total: 10, price: 3500, bought_on: "2026-11-07" } }, T);
+    assert.equal(pr4.eligible, 1);
+    assert.equal((await OK("package_attach", { id: pr4.package.id }, T)).attached, 1);
+    const h4 = await OK("client_history", { id: cl4.id }, T);
+    assert.deepEqual(h4.history.map((x) => x.pay), ["package", "paid"]); assert.equal(h4.packages[0].used, 1); }
   // плани з повтором
   const pr = await OK("plan_save", { plan: { day: "2026-11-10", time: "07:00", title: "Басейн" }, repeat_weeks: 2 }, T);
   assert.equal(pr.created, 3);
@@ -388,9 +397,9 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
     await BAD("admin_setup", { code: ADMIN_CODE, phone: "0500000001", password: "Admin2026x" }, null, /вже створено/);
     await BAD("bootstrap", {}, AT, /auth/); // адмін-токен не дає доступу тренера напряму
     const stt = await OK("admin_status", {}, AT);
-    assert.equal(stt.counts.clients, 2); assert.match(stt.tick_url, /^https:\/\/fn\.test\/\?tick=/); assert.equal(stt.tenants_total, 1);
+    assert.equal(stt.counts.clients, 3); assert.match(stt.tick_url, /^https:\/\/fn\.test\/\?tick=/); assert.equal(stt.tenants_total, 1);
     const tl = (await OK("admin_tenants", {}, AT)).tenants;
-    assert.equal(tl[0].tg_linked, true); assert.equal(tl[0].state, "trial"); assert.equal(tl[0].clients, 2);
+    assert.equal(tl[0].tg_linked, true); assert.equal(tl[0].state, "trial"); assert.equal(tl[0].clients, 3);
     const TID = tl[0].tid;
     const imp = await OK("admin_impersonate", { tid: TID }, AT);
     assert.equal((await OK("bootstrap", {}, imp.token)).settings.trainer_name, "Ігор");

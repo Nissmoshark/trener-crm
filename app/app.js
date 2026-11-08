@@ -3,6 +3,7 @@
   const API_URL = (window.TRAINER_API || "").trim();
   const DEMO = !API_URL;
   const $ = (sel, el = document) => el.querySelector(sel);
+  const $$ = (sel, el = document) => [...el.querySelectorAll(sel)];
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const pad = (n) => String(n).padStart(2, "0");
   const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -21,6 +22,15 @@
   const num = (x) => Math.round(Number(x) || 0).toLocaleString("uk-UA").replace(/ /g, " ");
   const KIND = { personal: "Персональне", split: "Спліт", group: "Група" };
   const PAY = { paid: "Оплачено", debt: "Борг", package: "Абонемент" };
+  const EXP = { rent: ["Оренда залу", "🏟"], gear: ["Інвентар", "🏋️"], transport: ["Транспорт", "🚕"], education: ["Навчання", "📚"], ads: ["Реклама", "📣"], food: ["Харчування", "🥗"], other: ["Інше", "🧾"] };
+  const REPEAT = [[0, "не повторювати"], [4, "4 тижні"], [8, "8 тижнів"], [12, "12 тижнів"], [26, "півроку"]];
+  const MEAS = [["weight", "Вага", "кг"], ["waist", "Талія", "см"], ["hips", "Стегна", "см"], ["chest", "Груди", "см"], ["fat", "Жир", "%"]];
+  const parseProg = (x) => { try { const a = JSON.parse(x || "[]"); return Array.isArray(a) ? a : []; } catch { return []; } };
+  async function shareText(text, okMsg) {
+    if (navigator.share) { try { await navigator.share({ text }); return; } catch { /* скасовано */ } }
+    try { await navigator.clipboard.writeText(text); toast(okMsg || "Скопійовано"); }
+    catch { openSheet(`<h2>Текст<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2><label class="field"><span>Скопіюйте й надішліть</span><textarea id="share-text" rows="6" readonly>${esc(text)}</textarea></label>`, (bg) => $("#share-text", bg).select()); }
+  }
   const ICON = {
     left: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>',
     right: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
@@ -146,6 +156,9 @@
     if (s.status === "no_show") tags.push('<span class="tag noshow">не прийшов</span>');
     if (s.participants.some((p) => p.pay === "debt")) tags.push('<span class="tag debt">борг</span>');
     if (s.participants.some((p) => p.pay === "package")) tags.push('<span class="tag pkg">абонемент</span>');
+    if (s.participants.some((p) => p.confirm === "no")) tags.push('<span class="tag debt">❌ не зможе</span>');
+    else if (s.participants.length && s.participants.every((p) => p.confirm === "yes")) tags.push('<span class="tag ok">✅ підтверджено</span>');
+    if (s.series) tags.push('<span class="tag moved">↻</span>');
     if (s.moves && s.moves.length) tags.push(`<span class="tag moved">перенесено з ${s.moves[s.moves.length - 1].from_time}</span>`);
     const sub = [s.kind !== "personal" ? KIND[s.kind] : `${s.duration_min} хв`, ...tags];
     return `<button class="sess ${s.kind} ${s.status}" data-act="editSession" data-id="${s.id}">
@@ -255,6 +268,7 @@
       <label class="field"><span>Нагадати в Telegram</span><select id="pl-rem">${REMIND.map(([v, l]) => `<option value="${v}" ${Number(x.remind_min) === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <label class="field"><span>Місце (необовʼязково)</span><input id="pl-place" value="${esc(x.place || "")}" placeholder="Адреса чи назва"></label>
       <label class="field"><span>Нотатка</span><textarea id="pl-note" rows="2">${esc(x.note || "")}</textarea></label>
+      ${p ? (p.series ? '<p class="hint">↻ Частина щотижневої серії.</p>' : "") : `<label class="field"><span>Повторювати щотижня</span><select id="pl-rep">${REPEAT.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select></label>`}
       <div class="foot"><button class="btn blue" data-act="savePlan" data-id="${p ? p.id : ""}">Зберегти</button>${p ? `<button class="btn red" data-act="deletePlan" data-id="${p.id}">Видалити</button>` : ""}</div>`, (bg) => { if (!p) $("#pl-title", bg).focus(); bg.dataset.cat = x.cat; });
   }
 
@@ -303,6 +317,7 @@
       <div class="parts">${s.participants.map((p, i) => partRow(p, i)).join("")}</div>
       ${(s.kind === "personal" && s.participants.length >= 1) ? '<button class="btn light wide" style="margin-bottom:12px" data-act="addMore">+ Додати ще клієнта (спліт)</button>' : pickerHtml()}
       <label class="field"><span>Нотатка</span><textarea id="f-note" rows="2" placeholder="Що робили, самопочуття…">${esc(s.note || "")}</textarea></label>
+      ${isNew ? `<label class="field"><span>Повторювати щотижня</span><select id="f-rep">${REPEAT.map(([v, l]) => `<option value="${v}" ${Number(s.repeat || 0) === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>` : s.series ? '<p class="hint">↻ Це тренування — частина щотижневої серії.</p>' : ""}
       <div class="sum-line"><span>Вартість</span><b>${num(total)} грн</b></div>
       <div class="foot"><button class="btn blue" data-act="saveSession">${isNew ? "Записати" : "Зберегти"}</button></div>
       ${isNew ? "" : `<div class="more-actions">
@@ -337,7 +352,7 @@
     const c = clientById(p.client_id) || { name: p.name };
     const pk = activePkg(p.client_id) || (p.package_id && st.packages.find((x) => x.id === p.package_id));
     return `<div class="part">
-      <div class="part-h"><span>${esc(c.name)}${pk ? ` <span class="tag pkg">абон. ${pk.sessions_total - pk.used} з ${pk.sessions_total}</span>` : ""}</span><button data-act="rmPart" data-i="${i}" aria-label="Прибрати">${ICON.close.replace('stroke-width="2.2"', 'stroke-width="2" width="18" height="18"')}</button></div>
+      <div class="part-h"><span>${esc(c.name)}${p.confirm === "yes" ? ' <span class="tag ok">✅ буде</span>' : p.confirm === "no" ? ' <span class="tag debt">❌ не зможе</span>' : ""}${pk ? ` <span class="tag pkg">абон. ${pk.sessions_total - pk.used} з ${pk.sessions_total}</span>` : ""}</span><button data-act="rmPart" data-i="${i}" aria-label="Прибрати">${ICON.close.replace('stroke-width="2.2"', 'stroke-width="2" width="18" height="18"')}</button></div>
       <div class="part-r">
         <input type="number" inputmode="decimal" data-price="${i}" value="${p.pay === "package" ? pkgUnit(p.client_id, p.package_id) : p.price}" ${p.pay === "package" ? "disabled" : ""} aria-label="Ціна">
         <div class="pay" role="group" aria-label="Оплата">${Object.entries(PAY).map(([k, l]) => `<button data-act="pay" data-i="${i}" data-pay="${k}" aria-pressed="${p.pay === k}">${l}</button>`).join("")}</div>
@@ -363,6 +378,7 @@
     if (v("f-time") !== undefined) draft.start_time = v("f-time");
     if (v("f-dur") !== undefined) draft.duration_min = Number(v("f-dur")) || 60;
     if (v("f-title") !== undefined) draft.title = v("f-title");
+    if (v("f-rep") !== undefined) draft.repeat = Number(v("f-rep")) || 0;
     if (v("f-extra") !== undefined) draft.extra_amount = v("f-extra");
     if (v("f-note") !== undefined) draft.note = v("f-note");
   }
@@ -383,7 +399,7 @@
       return `<button class="crow" data-act="openClient" data-id="${c.id}">
         <span class="ava">${esc(initials(c.name))}</span>
         <span><span class="nm">${esc(c.name)}</span><br><span class="ph">${esc(c.phone || "без телефону")}</span></span>
-        <span class="rt"><b>${c.price ? num(c.price) : "—"}</b>${Number(c.debt) ? `<span class="tag debt">борг ${num(c.debt)}</span>` : pk ? `<span class="tag pkg">${pk.sessions_total - pk.used} з ${pk.sessions_total}</span>` : `<span>${c.visits || 0} трен.</span>`}</span>
+        <span class="rt"><b>${c.price ? num(c.price) : "—"}</b>${Number(c.debt) ? `<span class="tag debt">борг ${num(c.debt)}</span>` : pk ? `<span class="tag ${pk.sessions_total - pk.used <= 2 ? "warn" : "pkg"}">${pk.sessions_total - pk.used <= 2 ? "⚠️ " : ""}${pk.sessions_total - pk.used} з ${pk.sessions_total}</span>` : `<span>${c.visits || 0} трен.</span>`}</span>
       </button>`;
     };
     shell(`
@@ -404,7 +420,9 @@
     const box = $("#cbox"); if (!box) return;
     const ok = j.history.filter((h) => h.status !== "cancelled");
     const spent = ok.reduce((a, h) => a + Number(h.price), 0);
-    const debts = j.history.filter((h) => h.pay === "debt" && h.status !== "cancelled");
+    const debts = j.debts || [];
+    const prog = parseProg(c.program);
+    const ms = j.measures || [];
     const tel = (c.phone || "").replace(/[^\d+]/g, "");
     const intl = tel.startsWith("0") ? "+38" + tel : tel;
     box.innerHTML = `
@@ -413,7 +431,8 @@
         ${tel ? `<div class="actions" style="margin-top:12px"><a class="btn light" href="tel:${esc(intl)}">${ICON.phone}${esc(c.phone)}</a><a class="btn light" href="viber://chat?number=${esc(intl.replace("+", "%2B"))}">Viber</a><a class="btn light" href="https://t.me/${esc(intl)}" target="_blank" rel="noopener">Telegram</a></div>` : ""}
         <div style="margin-top:10px;color:var(--muted);font-size:14px">Стандартна ціна: <b style="color:var(--ink)">${c.price ? num(c.price) + " грн" : "не задана"}</b></div>
       </div>
-      ${debts.length ? `<div class="card"><h3>Борг: ${num(debts.reduce((a, h) => a + Number(h.price), 0))} грн</h3><ul class="hist">${debts.map((h) => `<li><span>${dLong(h.day)}, ${h.start_time}</span><button class="btn light" style="height:34px" data-act="payDebt" data-id="${h.part_id}">Оплачено · ${num(h.price)}</button></li>`).join("")}</ul></div>` : ""}
+      ${debts.length ? `<div class="card"><h3>Борг: ${num(debts.reduce((a, h) => a + Number(h.price), 0))} грн</h3><ul class="hist">${debts.map((h) => `<li><span>${dLong(h.day)}${h.time ? ", " + h.time : ""}</span><button class="btn light" style="height:34px" data-act="payDebt" data-id="${h.part_id}">Оплачено · ${num(h.price)}</button></li>`).join("")}</ul>
+        <button class="btn light wide" style="margin-top:8px" data-act="debtRemind" data-id="${c.id}">💬 ${c.tg_linked ? "Нагадати в Telegram" : "Надіслати нагадування"}</button></div>` : ""}
       <div class="card"><h3>Абонементи</h3>
         ${j.packages.length ? j.packages.map((p) => `<button class="pkg" data-act="editPackage" data-id="${p.id}">
           <span style="min-width:96px"><b>${esc(p.title || p.sessions_total + " трен.")}</b><br><small style="color:var(--muted)">${num(p.price)} грн · ${dShort(p.bought_on)}${p.paid ? "" : " · не оплачено"}</small></span>
@@ -421,7 +440,11 @@
           <b>${p.sessions_total - p.used}</b></button>`).join("") : '<div style="color:var(--muted);font-size:14px;margin-bottom:8px">Абонементів немає</div>'}
         <button class="btn light wide" style="margin-top:8px" data-act="newPackage">Продати абонемент</button>
       </div>
-      <div class="card"><h3>Програма та нотатки</h3><div class="notes">${c.notes ? esc(c.notes) : '<span style="color:var(--muted)">Додайте програму тренувань, побажання чи обмеження — кнопка «Змінити».</span>'}</div></div>
+      <div class="card"><h3 class="row-h"><span>Програма тренувань</span><button class="chip-btn sm" data-act="editProgram" data-id="${c.id}">${prog.length ? "Змінити" : "Скласти"}</button></h3>
+        ${prog.length ? `<table class="prog"><thead><tr><th>Вправа</th><th>Підх.</th><th>Повт.</th><th>Вага</th></tr></thead><tbody>${prog.map((r) => `${r.day ? `<tr class="pday-r"><td colspan="4">${esc(r.day)}</td></tr>` : ""}<tr><td>${esc(r.name)}${r.note ? `<small>${esc(r.note)}</small>` : ""}</td><td>${esc(r.sets)}</td><td>${esc(r.reps)}</td><td>${esc(r.weight)}</td></tr>`).join("")}</tbody></table>` : '<div class="none">Вправи з підходами, повтореннями й вагою — щоб не тримати в голові.</div>'}
+      </div>
+      <div class="card"><h3 class="row-h"><span>Заміри й прогрес</span><button class="chip-btn sm" data-act="newMeasure" data-id="${c.id}">+ Замір</button></h3>${measuresHtml(ms)}</div>
+      ${c.notes ? `<div class="card"><h3>Нотатки</h3><div class="notes">${esc(c.notes)}</div></div>` : ""}
       <div class="card"><h3>Нагадування в Telegram</h3>
         <div style="font-size:14px;color:var(--muted);margin-bottom:10px">${c.tg_linked ? "✅ Клієнт підключив нагадування." : c.phone ? "Надішліть клієнту посилання — бот попросить підтвердити номер " + esc(c.phone) + " і нагадуватиме про тренування й переноси." : "Спершу вкажіть номер телефону клієнта — бот підключиться лише з цим номером."}</div>
         <button class="btn light wide" data-act="clientLink" data-id="${c.id}">${c.tg_linked ? "Посилання ще раз" : "Отримати посилання для клієнта"}</button>
@@ -429,6 +452,53 @@
       </div>
       <div class="card"><h3>Історія</h3>${j.history.length ? `<ul class="hist">${j.history.slice(0, 60).map((h) => `<li><span>${dLong(h.day)} ${h.start_time} ${h.kind !== "personal" ? `<span class="tag moved">${KIND[h.kind]}</span>` : ""} ${h.status === "cancelled" ? '<span class="tag moved">скасовано</span>' : h.status === "no_show" ? '<span class="tag noshow">не прийшов</span>' : ""} ${h.pay === "debt" ? '<span class="tag debt">борг</span>' : h.pay === "package" ? '<span class="tag pkg">абонемент</span>' : ""}</span><span class="p">${num(h.price)}</span></li>`).join("")}</ul>` : '<div style="color:var(--muted);font-size:14px">Ще не тренувався</div>'}</div>
       <div style="padding:0 16px"><button class="btn light wide" data-act="archiveClient" data-id="${c.id}">${c.archived ? "Повернути з архіву" : "Перенести в архів"}</button></div>`;
+  }
+  // Заміри: остання цифра, зміна від першого заміру, міні-графік ваги
+  function measuresHtml(ms) {
+    if (!ms.length) return '<div class="none">Вага, талія, стегна, груди, % жиру — і видно прогрес клієнта.</div>';
+    const first = ms[0], last = ms[ms.length - 1];
+    const tiles = MEAS.map(([k, l, u]) => {
+      const vals = ms.filter((m) => m[k] != null); if (!vals.length) return "";
+      const a = vals[0][k], b = vals[vals.length - 1][k], d = Math.round((b - a) * 10) / 10;
+      return `<div><b>${num1(b)}</b><span>${l}, ${u}</span>${vals.length > 1 && d ? `<em class="${d < 0 ? "dn" : "up"}">${d > 0 ? "+" : ""}${num1(d)}</em>` : ""}</div>`;
+    }).join("");
+    const w = ms.filter((m) => m.weight != null);
+    let chart = "";
+    if (w.length > 1) {
+      const mn = Math.min(...w.map((m) => m.weight)), mx = Math.max(...w.map((m) => m.weight)), span = Math.max(0.5, mx - mn);
+      const pts = w.map((m, i) => `${(i / (w.length - 1)) * 300},${70 - ((m.weight - mn) / span) * 60}`).join(" ");
+      chart = `<svg class="mchart" viewBox="-6 0 312 80" role="img" aria-label="Вага: від ${num1(w[0].weight)} до ${num1(w[w.length - 1].weight)} кг"><polyline points="${pts}" fill="none" stroke="var(--plate-blue)" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>${w.map((m, i) => `<circle cx="${(i / (w.length - 1)) * 300}" cy="${70 - ((m.weight - mn) / span) * 60}" r="3.5" fill="var(--plate-blue)"/>`).join("")}</svg>`;
+    }
+    return `<div class="mtiles">${tiles}</div>${chart}<div class="msub">з ${dLong(first.day)} · ${ms.length} замір.</div>
+      <ul class="hist">${[...ms].reverse().slice(0, 12).map((m) => `<li><button class="mrow" data-act="editMeasure" data-id="${m.id}"><span>${dLong(m.day)}</span><span>${MEAS.filter(([k]) => m[k] != null).map(([k, l, u]) => `${l.toLowerCase()} ${num1(m[k])}`).join(" · ") || esc(m.note || "")}</span></button></li>`).join("")}</ul>`;
+  }
+  const num1 = (x) => (Math.round(Number(x) * 10) / 10).toLocaleString("uk-UA");
+  function measureSheet(m, clientId) {
+    const x = m || { day: today(), client_id: clientId };
+    openSheet(`<h2>${m ? "Замір" : "Новий замір"}<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+      <label class="field"><span>Дата</span><input id="ms-day" type="date" value="${x.day}"></label>
+      <div class="row2">${MEAS.map(([k, l, u]) => `<label class="field"><span>${l}, ${u}</span><input id="ms-${k}" type="number" inputmode="decimal" step="0.1" value="${x[k] ?? ""}"></label>`).join("")}</div>
+      <label class="field"><span>Нотатка</span><input id="ms-note" value="${esc(x.note || "")}" placeholder="Самопочуття, фото в телефоні…"></label>
+      <div class="foot"><button class="btn blue" data-act="saveMeasure" data-id="${m ? m.id : ""}" data-client="${x.client_id}">Зберегти</button>${m ? `<button class="btn red" data-act="deleteMeasure" data-id="${m.id}">Видалити</button>` : ""}</div>`);
+  }
+  let progDraft = [];
+  function programSheet(c) {
+    progDraft = parseProg(c.program).map((r) => ({ ...r }));
+    if (!progDraft.length) progDraft.push({ name: "", sets: "", reps: "", weight: "", note: "", day: "" });
+    drawProgram(c.id);
+  }
+  function drawProgram(cid) {
+    openSheet(`<h2>Програма<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+      <p class="hint" style="margin-top:-6px">Розділ (необовʼязково) — напр. «День 1: ноги». Порожні рядки не зберігаються.</p>
+      <div class="prog-ed">${progDraft.map((r, i) => `<div class="pr">
+        <input data-pf="day" data-i="${i}" value="${esc(r.day || "")}" placeholder="Розділ" class="pr-day">
+        <div class="pr-main"><input data-pf="name" data-i="${i}" value="${esc(r.name)}" placeholder="Вправа"><button class="icon-btn sm" data-act="progRm" data-i="${i}" aria-label="Прибрати">${ICON.close}</button></div>
+        <div class="pr-nums"><input data-pf="sets" data-i="${i}" value="${esc(r.sets)}" placeholder="Підх." inputmode="numeric"><input data-pf="reps" data-i="${i}" value="${esc(r.reps)}" placeholder="Повт."><input data-pf="weight" data-i="${i}" value="${esc(r.weight)}" placeholder="Вага"></div>
+        <input data-pf="note" data-i="${i}" value="${esc(r.note || "")}" placeholder="Підказка (техніка, темп)" class="pr-note"></div>`).join("")}</div>
+      <button class="btn light wide" data-act="progAdd" style="margin:8px 0 12px">+ Вправа</button>
+      <div class="foot"><button class="btn blue" data-act="saveProgram" data-id="${cid}">Зберегти програму</button></div>`, (bg) => {
+      bg.addEventListener("input", (e) => { const t = e.target; if (t.dataset.pf) progDraft[+t.dataset.i][t.dataset.pf] = t.value; });
+    });
   }
   function clientSheet(c) {
     const x = c || { name: "", phone: "", price: "", notes: "", remind: true };
@@ -439,7 +509,7 @@
         <label class="field"><span>Телефон</span><input id="c-phone" type="tel" value="${esc(x.phone || "")}" placeholder="050 123 45 67"></label>
         <label class="field"><span>Ціна тренування, грн</span><input id="c-price" type="number" inputmode="decimal" value="${x.price ?? ""}" placeholder="400"></label>
       </div>
-      <label class="field"><span>Програма, нотатки</span><textarea id="c-notes" rows="5" placeholder="Цілі, вправи, обмеження">${esc(x.notes || "")}</textarea></label>
+      <label class="field"><span>Нотатки</span><textarea id="c-notes" rows="4" placeholder="Цілі, травми, обмеження, побажання">${esc(x.notes || "")}</textarea></label>
       <label class="toggle"><input type="checkbox" id="c-remind" ${x.remind !== false ? "checked" : ""}> Нагадувати в Telegram</label>
       <div class="foot"><button class="btn blue" data-act="saveClient" data-id="${c ? c.id : ""}">Зберегти</button></div>`, (bg) => { if (!c) $("#c-name", bg).focus(); });
   }
@@ -485,13 +555,15 @@
         <div class="datebar"><button class="icon-btn" data-act="statsShift" data-n="-1" aria-label="Назад">${ICON.left}</button><div class="label">${statsLabel()}</div><button class="icon-btn" data-act="statsShift" data-n="1" aria-label="Вперед">${ICON.right}</button></div>
       </header><div id="sbox"><div class="loading">Рахую…</div></div>`);
     const [from, to] = statsRange();
-    const j = await must("range", { from, to });
+    const [j, ej] = await Promise.all([must("range", { from, to }), must("expenses_range", { from, to })]);
     const box = $("#sbox"); if (!box) return;
+    const exps = ej.expenses || [];
+    st.expenses = exps;
     const all = j.sessions, ok = all.filter((s) => s.status !== "cancelled");
     const income = ok.reduce((a, s) => a + sessTotal(s), 0);
     const parts = ok.flatMap((s) => s.participants.map((p) => ({ ...p, s })));
     const clientsN = new Set(parts.map((p) => p.client_id)).size;
-    const debt = parts.filter((p) => p.pay === "debt").reduce((a, p) => a + Number(p.price), 0);
+    const debt = parts.filter((p) => p.pay === "debt" && p.s.day <= today()).reduce((a, p) => a + Number(p.price), 0);
     const fromPkg = parts.filter((p) => p.pay === "package").reduce((a, p) => a + Number(p.price), 0);
     const cancelled = all.length - ok.length, noShow = all.filter((s) => s.status === "no_show").length;
     const moves = all.reduce((a, s) => a + (s.moves || []).length, 0);
@@ -510,8 +582,27 @@
     // вільні вікна: найзавантаженіші години
     const hours = {}; ok.forEach((s) => { const h = s.start_time.slice(0, 2); hours[h] = (hours[h] || 0) + 1; });
     const busyHours = Object.entries(hours).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([h]) => h + ":00");
+    const spent = exps.reduce((a, e) => a + Number(e.amount), 0), net = income - spent;
+    const goal = Number(st.settings.month_goal) || 0;
+    const goalHtml = st.statsPeriod === "month" && goal ? (() => {
+      const pct = Math.round((income / goal) * 100), isCur = monthStart(today()) === from;
+      const daysLeft = isCur ? Math.max(0, (D(to) - D(today())) / 86400000) : 0;
+      return `<div class="card goal"><h3 class="row-h"><span>🎯 Ціль місяця</span><b>${pct}%</b></h3>
+        <div class="gbar"><i style="width:${Math.min(100, pct)}%"></i></div>
+        <div class="msub">${num(income)} з ${num(goal)} грн${income < goal ? ` · лишилось ${num(goal - income)}${isCur && daysLeft ? ` · ≈${num((goal - income) / daysLeft)} грн/день` : ""}` : " · ціль досягнута 🎉"}</div></div>`;
+    })() : st.statsPeriod === "month" ? '<div class="card goal"><button class="list-btn" data-act="goalSheet"><span>🎯 Поставити ціль на місяць<small>Скільки хочете заробити — покажу прогрес щодня</small></span>' + ICON.right + "</button></div>" : "";
+    const byCat = Object.entries(exps.reduce((m, e) => { m[e.cat] = (m[e.cat] || 0) + Number(e.amount); return m; }, {})).sort((a, b) => b[1] - a[1]);
+    const expHtml = `<div class="chart"><h3 class="row-h"><span>Витрати</span><button class="chip-btn sm" data-act="newExpense">+ Витрата</button></h3>
+      ${exps.length ? `<div class="legend">${byCat.map(([k, v]) => `<div><i style="background:var(--plate-red)"></i><span>${(EXP[k] || EXP.other)[1]} ${(EXP[k] || EXP.other)[0]}</span><b>${num(v)} грн</b></div>`).join("")}</div>
+        <ul class="hist" style="margin-top:8px">${exps.slice(0, 30).map((e) => `<li><button class="mrow" data-act="editExpense" data-id="${e.id}"><span>${dShort(e.day)} · ${(EXP[e.cat] || EXP.other)[1]} ${esc(e.note || (EXP[e.cat] || EXP.other)[0])}</span><span class="p">−${num(e.amount)}</span></button></li>`).join("")}</ul>`
+        : '<div class="none">Оренда залу, інвентар, дорога, курси — щоб бачити чистий прибуток.</div>'}</div>`;
     box.innerHTML = `
       <div class="total"><div><div class="sum">${num(income)}<span>грн</span></div></div><div class="meta">дохід<br><b>${ok.length}</b> трен. · <b>${clientsN}</b> клієнт.</div></div>
+      <div class="stats-grid two">
+        <div class="stat"><b style="color:var(--plate-red)">${spent ? "−" + num(spent) : "0"}</b><span>витрати, грн</span></div>
+        <div class="stat"><b style="${net < 0 ? "color:var(--plate-red)" : "color:var(--plate-green, #1e7d4f)"}">${num(net)}</b><span>чистий прибуток, грн</span></div>
+      </div>
+      ${goalHtml}
       <div class="stats-grid">
         <div class="stat"><b>${num(avg)}</b><span>середній чек, грн</span></div>
         <div class="stat"><b>${num(fromPkg)}</b><span>з абонементів, грн</span></div>
@@ -530,7 +621,18 @@
       </div>
       <div class="chart"><h3>Топ клієнтів</h3>${top.length ? `<ol class="top-list">${top.map((t) => `<li><span>${esc(t.name)} · ${t.n} трен.</span><b>${num(t.v)}</b></li>`).join("")}</ol>` : '<div style="color:var(--muted)">Немає даних за період</div>'}
         ${busyHours.length ? `<div style="margin-top:10px;font-size:14px;color:var(--muted)">Найзавантаженіший час: <b style="color:var(--ink)">${busyHours.join(", ")}</b></div>` : ""}
-      </div>`;
+      </div>
+      ${expHtml}`;
+  }
+
+  function expenseSheet(e) {
+    const x = e || { day: today(), amount: "", cat: "rent", note: "" };
+    openSheet(`<h2>${e ? "Витрата" : "Нова витрата"}<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+      <div class="row2"><label class="field"><span>Сума, грн</span><input id="ex-amount" type="number" inputmode="decimal" value="${x.amount}" placeholder="0"></label>
+        <label class="field"><span>Дата</span><input id="ex-day" type="date" value="${x.day}"></label></div>
+      <div class="cats" role="group" aria-label="Категорія">${Object.entries(EXP).map(([k, [l, ic]]) => `<button data-act="expCat" data-cat="${k}" aria-pressed="${x.cat === k}">${ic} ${l}</button>`).join("")}</div>
+      <label class="field"><span>Коментар</span><input id="ex-note" value="${esc(x.note || "")}" placeholder="Напр. оренда за листопад"></label>
+      <div class="foot"><button class="btn blue" data-act="saveExpense" data-id="${e ? e.id : ""}">Зберегти</button>${e ? `<button class="btn red" data-act="deleteExpense" data-id="${e.id}">Видалити</button>` : ""}</div>`, (bg) => { bg.dataset.cat = x.cat; if (!e) $("#ex-amount", bg).focus(); });
   }
 
   // ───── Ще / налаштування ─────
@@ -543,12 +645,16 @@
           <label class="field"><span>План дня в Telegram о</span><input id="s-morning" type="time" value="${esc(s.digest_morning || "")}"></label>
           <label class="field"><span>Підсумок дня о</span><input id="s-evening" type="time" value="${esc(s.digest_evening || "")}"></label>
         </div>
+        <label class="field"><span>Адреса залу (додається в нагадування клієнтам)</span><input id="s-gym" value="${esc(s.gym_address || "")}" placeholder="Зал «Сила», вул. Сирецька 5"></label>
+        <label class="field"><span>Ціль доходу на місяць, грн</span><input id="s-goal" type="number" inputmode="numeric" value="${s.month_goal || ""}" placeholder="Напр. 40000"></label>
         <label class="field"><span>Нагадувати клієнтам за</span><select id="s-remind">${[[0, "не нагадувати"], [60, "1 годину"], [120, "2 години"], [180, "3 години"], [720, "12 годин"], [1440, "добу"]].map(([v, l]) => `<option value="${v}" ${Number(s.remind_before_min) === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
         <button class="btn blue wide" data-act="saveSettings">Зберегти</button>
       </div>
       <div class="card">
         <button class="list-btn" data-act="botSheet"><span>Telegram-бот<small>${!s.bot_ready && !DEMO ? "Ще не підключено — натисніть, щоб налаштувати" : s.tg_linked ? "@" + esc(s.bot_username) + " · план і підсумок дня приходять вам" : "@" + esc(s.bot_username || "бот") + " · підключіть свій Telegram"}</small></span>${ICON.right}</button>
         <button class="list-btn" data-act="changePin"><span>Мій вхід<small>${s.phone_hint ? esc(s.phone_hint) + " · " : ""}змінити номер чи пароль</small></span>${ICON.right}</button>
+        <button class="list-btn" data-act="backupNow"><span>Резервна копія в Telegram<small>${s.last_backup ? "Остання: " + dLong(s.last_backup.slice(0, 10)) : "Файл з усіма даними — у ваш бот"}${s.backup_weekly ? " · щонеділі автоматично" : ""}</small></span>${ICON.right}</button>
+        <label class="toggle" style="padding:10px 0"><input type="checkbox" id="s-backup" ${s.backup_weekly ? "checked" : ""} data-act="toggleBackup"> Щотижнева копія (неділя ввечері)</label>
         <button class="list-btn" data-act="exportCsv"><span>Вивантажити в Excel<small>Усі тренування у CSV-файлі</small></span>${ICON.right}</button>
         ${DEMO ? '<button class="list-btn" data-act="resetDemo"><span>Скинути демо-дані<small>Повернути приклад</small></span>' + ICON.right + "</button>" : '<button class="list-btn" data-act="logout"><span>Вийти<small>На цьому пристрої</small></span>' + ICON.right + "</button>"}
       </div>
@@ -596,9 +702,10 @@
     async saveSession() {
       syncDraft();
       const s = draft;
-      await must("session_save", {
+      const r = await must("session_save", {
         session: { id: s.id, day: s.day, start_time: s.start_time, duration_min: s.duration_min, kind: s.kind, title: s.title, extra_amount: s.kind === "group" ? s.extra_amount : 0, note: s.note },
         participants: s.participants.map((p) => ({ client_id: p.client_id, price: Number(p.price) || 0, pay: p.pay, package_id: p.pay === "package" ? p.package_id : null })),
+        repeat_weeks: s.id ? 0 : s.repeat || 0,
       });
       // запамʼятати ціну для клієнтів, у яких її ще немає
       for (const p of s.participants) {
@@ -606,7 +713,7 @@
         if (c && !c.price && p.pay !== "package" && Number(p.price) > 0)
           await call("client_save", { client: { id: c.id, name: c.name, phone: c.phone, price: Number(p.price), notes: c.notes, remind: c.remind } });
       }
-      closeSheet(); toast(s.id ? "Збережено" : "Записано"); st.date = s.day; await refreshBase(); render();
+      closeSheet(); toast(s.id ? "Збережено" : r.created > 1 ? `Записано ${r.created} тренувань щотижня${r.no_package ? ` · ${r.no_package} без абонемента (борг)` : ""}` : "Записано", !!r.no_package); st.date = s.day; await refreshBase(); render();
     },
     moveSession() {
       syncDraft();
@@ -629,9 +736,18 @@
     },
     deleteSession() {
       const id = draft.id;
+      if (draft.series) {
+        openSheet(`<h2>Видалити тренування<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+          <p style="margin:0 0 16px">Це тренування — частина щотижневої серії. Якщо клієнт просто не прийде, краще «Скасувати».</p>
+          <div class="foot col"><button class="btn red" data-act="delSeries" data-id="${id}" data-scope="one">Лише це</button><button class="btn red" data-act="delSeries" data-id="${id}" data-scope="future">Це й усі наступні</button></div>`);
+        return;
+      }
       askConfirm("Видалити тренування назавжди? Якщо клієнт просто не прийде, краще «Скасувати» — тоді воно залишиться в історії.", "Видалити", async () => {
         await must("session_delete", { id }); closeSheet(); toast("Видалено"); await refreshBase(); render();
       });
+    },
+    async delSeries(d) {
+      const r = await must("session_delete", { id: +d.id, scope: d.scope }); closeSheet(); toast(`Видалено: ${r.deleted || 1}`); await refreshBase(); render();
     },
     async confirmOk() { const fn = pendingConfirm; pendingConfirm = null; if (fn) await fn(); },
     openClient(d) { st.clientId = +d.id; render(); window.scrollTo(0, 0); },
@@ -647,6 +763,41 @@
       const c = clientById(+d.id);
       await must("client_archive", { id: c.id, archived: !c.archived }); await refreshBase(); toast(c.archived ? "Повернуто з архіву" : "Перенесено в архів"); st.clientId = null; render();
     },
+    async debtRemind(d) {
+      const r = await must("debt_remind", { client_id: +d.id });
+      if (r.sent) toast("Нагадування надіслано в Telegram"); else await shareText(r.text, "Текст скопійовано — надішліть клієнту");
+    },
+    editProgram(d) { const c = clientById(+d.id); if (c) programSheet(c); },
+    progAdd() { progDraft.push({ name: "", sets: "", reps: "", weight: "", note: "", day: "" }); drawProgram(+$("[data-act=saveProgram]").dataset.id); setTimeout(() => { const ins = $$("[data-pf=name]"); ins[ins.length - 1]?.focus(); }, 30); },
+    progRm(d) { progDraft.splice(+d.i, 1); drawProgram(+$("[data-act=saveProgram]").dataset.id); },
+    async saveProgram(d) {
+      await must("client_program", { id: +d.id, program: progDraft.filter((r) => String(r.name || "").trim()) });
+      closeSheet(); toast("Програму збережено"); await refreshBase(); render();
+    },
+    async newMeasure(d) { measureSheet(null, +d.id); },
+    async editMeasure(d) { const j = await must("client_history", { id: st.clientId }); const m = (j.measures || []).find((x) => x.id === +d.id); if (m) measureSheet(m, m.client_id); },
+    async saveMeasure(d) {
+      const v = (id) => $("#" + id).value.replace(",", ".");
+      await must("measure_save", { measure: { id: d.id ? +d.id : undefined, client_id: +d.client, day: v("ms-day"), weight: v("ms-weight"), waist: v("ms-waist"), hips: v("ms-hips"), chest: v("ms-chest"), fat: v("ms-fat"), note: $("#ms-note").value } });
+      closeSheet(); toast("Замір збережено"); render();
+    },
+    deleteMeasure(d) { askConfirm("Видалити цей замір?", "Видалити", async () => { await must("measure_delete", { id: +d.id }); closeSheet(); toast("Видалено"); render(); }); },
+    newExpense() { expenseSheet(null); },
+    editExpense(d) { const e = (st.expenses || []).find((x) => x.id === +d.id); if (e) expenseSheet(e); },
+    expCat(d, el) { const bg = $("#sheet"); bg.dataset.cat = d.cat; bg.querySelectorAll("[data-act=expCat]").forEach((b) => b.setAttribute("aria-pressed", b === el)); },
+    async saveExpense(d) {
+      await must("expense_save", { expense: { id: d.id ? +d.id : undefined, amount: $("#ex-amount").value.replace(",", "."), day: $("#ex-day").value, cat: $("#sheet").dataset.cat, note: $("#ex-note").value } });
+      closeSheet(); toast("Витрату збережено"); render();
+    },
+    deleteExpense(d) { askConfirm("Видалити витрату?", "Видалити", async () => { await must("expense_delete", { id: +d.id }); closeSheet(); toast("Видалено"); render(); }); },
+    goalSheet() {
+      openSheet(`<h2>Ціль на місяць<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+        <label class="field"><span>Скільки хочете заробляти за місяць, грн</span><input id="g-goal" type="number" inputmode="numeric" value="${st.settings.month_goal || ""}" placeholder="40000"></label>
+        <div class="foot"><button class="btn blue" data-act="saveGoal">Зберегти</button></div>`, (bg) => $("#g-goal", bg).focus());
+    },
+    async saveGoal() { await must("settings_save", { settings: { month_goal: +$("#g-goal").value || 0 } }); closeSheet(); await refreshBase(); toast("Ціль збережено"); render(); },
+    async backupNow() { if (DEMO) { toast("Резервна копія працює в робочій версії"); return; } await must("backup_now"); await refreshBase(); toast("Файл надіслано у ваш Telegram"); render(); },
+    async toggleBackup(d, el) { await must("settings_save", { settings: { backup_weekly: el.checked } }); await refreshBase(); toast(el.checked ? "Щотижнева копія увімкнена" : "Щотижнева копія вимкнена"); },
     async payDebt(d) { await must("participant_pay", { id: +d.id, pay: "paid" }); toast("Борг закрито"); await refreshBase(); render(); },
     newPackage() { packageSheet(null, st.clientId); },
     editPackage(d) { packageSheet(st.packages.find((p) => p.id === +d.id)); },
@@ -686,12 +837,22 @@
     async savePlan(d) {
       const v = (id) => $("#" + id).value;
       const day = v("pl-day");
-      await must("plan_save", { plan: { id: d.id ? +d.id : undefined, title: v("pl-title"), day, time: v("pl-time"), duration_min: v("pl-dur"), remind_min: +v("pl-rem"), place: v("pl-place"), note: v("pl-note"), cat: $("#sheet").dataset.cat } });
-      closeSheet(); toast("Збережено");
+      const r = await must("plan_save", { plan: { id: d.id ? +d.id : undefined, title: v("pl-title"), day, time: v("pl-time"), duration_min: v("pl-dur"), remind_min: +v("pl-rem"), place: v("pl-place"), note: v("pl-note"), cat: $("#sheet").dataset.cat }, repeat_weeks: $("#pl-rep") ? +$("#pl-rep").value : 0 });
+      closeSheet(); toast(r.created > 1 ? `Заплановано ${r.created} рази щотижня` : "Збережено");
       if (st.tab === "plans") st.planDate = day;
       render();
     },
-    deletePlan(d) { askConfirm("Видалити цей план?", "Видалити", async () => { await must("plan_delete", { id: +d.id }); closeSheet(); toast("Видалено"); render(); }); },
+    deletePlan(d) {
+      const p = (st.plans || []).find((x) => x.id === +d.id);
+      if (p && p.series) {
+        openSheet(`<h2>Видалити план<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+          <p style="margin:0 0 16px">«${esc(p.title)}» повторюється щотижня.</p>
+          <div class="foot col"><button class="btn red" data-act="delPlanSeries" data-id="${p.id}" data-scope="one">Лише цей</button><button class="btn red" data-act="delPlanSeries" data-id="${p.id}" data-scope="future">Цей і всі наступні</button></div>`);
+        return;
+      }
+      askConfirm("Видалити цей план?", "Видалити", async () => { await must("plan_delete", { id: +d.id }); closeSheet(); toast("Видалено"); render(); });
+    },
+    async delPlanSeries(d) { const r = await must("plan_delete", { id: +d.id, scope: d.scope }); closeSheet(); toast(`Видалено: ${r.deleted || 1}`); render(); },
     async planDone(d) { await must("plan_done", { id: +d.id, done: d.done === "1" }); render(); },
     statsPeriod(d) { st.statsPeriod = d.p; render(); },
     statsShift(d) {
@@ -702,7 +863,7 @@
       render();
     },
     async saveSettings() {
-      await must("settings_save", { settings: { trainer_name: $("#s-name").value, digest_morning: $("#s-morning").value, digest_evening: $("#s-evening").value, remind_before_min: +$("#s-remind").value } });
+      await must("settings_save", { settings: { trainer_name: $("#s-name").value, digest_morning: $("#s-morning").value, digest_evening: $("#s-evening").value, remind_before_min: +$("#s-remind").value, gym_address: $("#s-gym").value, month_goal: +$("#s-goal").value || 0 } });
       await refreshBase(); toast("Збережено");
     },
     botSheet() {
@@ -812,10 +973,79 @@
     };
   }
 
+  // ───── Адмінка розробника (#admin) ─────
+  let atoken = ""; try { atoken = localStorage.getItem("trainer-admin") || ""; } catch { /* */ }
+  async function acall(action, body = {}) {
+    if (DEMO) return { ok: false, error: "Адмінка працює лише з сервером" };
+    try {
+      const r = await fetch(API_URL, { method: "POST", headers: { "content-type": "application/json", ...(atoken ? { authorization: "Bearer " + atoken } : {}) }, body: JSON.stringify({ action, ...body }) });
+      return await r.json();
+    } catch { return { ok: false, error: "Немає зʼєднання з сервером" }; }
+  }
+  async function showAdmin(msg = "") {
+    root.onclick = null; root.onsubmit = null;
+    if (!atoken) {
+      const stt = await acall("admin_state");
+      const setup = stt.ok && !stt.exists;
+      root.innerHTML = `<form class="login" novalidate><h1>🛠 Адмінка</h1><p>${setup ? "Створіть вхід розробника. Потрібен одноразовий код." : "Вхід для розробника."}</p>
+        ${setup ? '<label class="field"><span>Код</span><input id="a-code" autocomplete="off"></label>' : ""}
+        <label class="field"><span>Номер телефону</span><input id="a-phone" type="tel" autocomplete="username"></label>
+        <label class="field"><span>Пароль</span><input id="a-pass" type="password" autocomplete="${setup ? "new-password" : "current-password"}"></label>
+        <div class="err" role="alert">${esc(msg || (stt.ok ? "" : stt.error || ""))}</div>
+        <button class="btn blue wide" type="submit">${setup ? "Створити" : "Увійти"}</button>
+        <button class="btn light wide" type="button" data-a="exit" style="margin-top:10px">До журналу</button></form>`;
+      root.onclick = (e) => { if (e.target.closest("[data-a=exit]")) { location.hash = ""; location.reload(); } };
+      root.onsubmit = async (e) => {
+        e.preventDefault();
+        const j = await acall(setup ? "admin_setup" : "admin_login", { code: $("#a-code")?.value, phone: $("#a-phone").value, password: $("#a-pass").value });
+        if (!j.ok) return showAdmin(j.error);
+        atoken = j.token; try { localStorage.setItem("trainer-admin", atoken); } catch { /* */ }
+        showAdmin();
+      };
+      return;
+    }
+    const j = await acall("admin_status");
+    if (!j.ok) { if (j.error === "auth") { atoken = ""; try { localStorage.removeItem("trainer-admin"); } catch { /* */ } } return showAdmin(j.error === "auth" ? "" : j.error); }
+    const row = (k, v) => `<div><span>${k}</span><b>${v}</b></div>`;
+    const dt = (x) => (x ? new Date(x).toLocaleString("uk-UA", { dateStyle: "short", timeStyle: "short" }) : "—");
+    root.innerHTML = `<div class="app admin">
+      <header class="top"><div class="top-row"><h1 class="title">🛠 Адмінка</h1><button class="chip-btn" data-a="refresh">Оновити</button></div></header>
+      ${msg ? `<div class="card" role="status">${esc(msg)}</div>` : ""}
+      <div class="card"><h3>Тренер</h3><div class="rows">${row("Імʼя", esc(j.trainer.name || "—"))}${row("Номер входу", esc(j.trainer.phone || "—"))}${row("Номер Telegram", esc(j.trainer.tg_phone || "—"))}${row("Пароль", j.trainer.has_password ? "є" : "немає")}${row("Telegram", j.trainer.tg_linked ? "✅ підключено" : "❌ ні")}</div>
+        <div class="actions" style="margin-top:12px;flex-wrap:wrap"><button class="btn blue" data-a="imp">Увійти як тренер</button><button class="btn light" data-a="pass">Новий пароль тренеру</button></div></div>
+      <div class="card"><h3>Дані</h3><div class="rows">${Object.entries(j.counts).map(([k, v]) => row({ clients: "Клієнти", packages: "Абонементи", sessions: "Тренування", parts: "Учасники тренувань", moves: "Переноси", plans: "Плани", expenses: "Витрати", measures: "Заміри" }[k] || k, v)).join("")}</div></div>
+      <div class="card"><h3>Бот</h3><div class="rows">${row("Бот", j.bot.username ? "@" + esc(j.bot.username) : "—")}${row("Вбудований", j.bot.managed ? "так" : "ні")}${row("Webhook", j.bot.webhook ? esc(j.bot.webhook.url) : "—")}${row("У черзі", j.bot.webhook ? j.bot.webhook.pending : "—")}${j.bot.webhook && j.bot.webhook.last_error ? row("Остання помилка", esc(j.bot.webhook.last_error) + " · " + dt(j.bot.webhook.last_error_at)) : ""}</div>
+        <div class="actions" style="margin-top:12px;flex-wrap:wrap"><button class="btn light" data-a="msg">Тест-повідомлення тренеру</button><button class="btn light" data-a="backup">Резервна копія</button></div></div>
+      <div class="card"><h3>Розклад перевірок</h3><div class="rows">${row("Остання перевірка", dt(j.ticks.last))}${row("Ранковий план", esc(j.ticks.morning || "—"))}${row("Вечірній підсумок", esc(j.ticks.evening || "—"))}${row("Резервна копія", dt(j.ticks.backup))}${row("Час сервера (Київ)", esc(j.local.day + " " + j.local.hm))}</div>
+        <p class="hint" style="margin-top:10px">Для точних нагадувань до хвилини додайте це посилання в cron-job.org (щохвилини, GET):</p>
+        <div class="copy-row"><input id="a-tick" readonly value="${esc(j.tick_url)}"><button class="btn light" data-a="copy">Копіювати</button></div>
+        <div class="actions" style="margin-top:12px"><button class="btn light" data-a="tick">Запустити перевірку зараз</button><button class="btn light" data-a="thr">Зняти блокування спроб</button></div></div>
+      <div class="card"><h3 class="row-h"><span>Помилки (${j.errors.length})</span>${j.errors.length ? '<button class="chip-btn sm" data-a="clr">Очистити</button>' : ""}</h3>
+        ${j.errors.length ? `<ul class="errs">${j.errors.map((e) => `<li><small>${dt(e.at)} · ${esc(e.where)}</small><code>${esc(e.msg)}</code></li>`).join("")}</ul>` : '<div class="none">Помилок немає 👌</div>'}</div>
+      <div style="padding:0 16px 32px;display:grid;gap:8px"><button class="btn light wide" data-a="exit">До журналу</button><button class="btn light wide" data-a="out">Вийти з адмінки</button><button class="btn red wide" data-a="outall">Вийти з адмінки на всіх пристроях</button></div>
+    </div>`;
+    root.onclick = async (e) => {
+      const b = e.target.closest("[data-a]"); if (!b) return;
+      const a = b.dataset.a, run = async (action, body, okMsg) => { const r = await acall(action, body); showAdmin(r.ok ? okMsg(r) : "⚠️ " + r.error); };
+      if (a === "refresh") return showAdmin();
+      if (a === "imp") { const r = await acall("admin_impersonate"); if (!r.ok) return showAdmin("⚠️ " + r.error); token = r.token; localStorage.setItem("trainer-token", token); location.hash = ""; root.onclick = null; return start(); }
+      if (a === "pass") { const p = prompt("Новий пароль для тренера (від 8 символів, літери й цифри):"); if (p) return run("admin_set_trainer_password", { password: p }, () => "Пароль тренера змінено. Тренера на інших пристроях виведено."); return; }
+      if (a === "msg") return run("admin_test_message", { text: "Перевірка звʼязку" }, () => "Повідомлення надіслано тренеру");
+      if (a === "backup") return run("admin_backup", {}, () => "Резервну копію надіслано тренеру в Telegram");
+      if (a === "tick") return run("admin_tick", {}, (r) => "Перевірку виконано: " + (r.done.length ? r.done.join(", ") : "нічого не треба було надсилати"));
+      if (a === "thr") return run("admin_reset_throttles", {}, (r) => "Знято блокувань: " + r.cleared);
+      if (a === "clr") return run("admin_clear_errors", {}, () => "Журнал помилок очищено");
+      if (a === "copy") { const i = $("#a-tick"); i.select(); try { await navigator.clipboard.writeText(i.value); } catch { /* */ } return toast("Скопійовано"); }
+      if (a === "exit") { location.hash = ""; location.reload(); return; }
+      if (a === "out" || a === "outall") { if (a === "outall") await acall("admin_logout_all"); atoken = ""; try { localStorage.removeItem("trainer-admin"); } catch { /* */ } return showAdmin(); }
+    };
+  }
+
   async function start() {
     try { await refreshBase(); } catch { return; }
     render();
   }
   if ("serviceWorker" in navigator && location.protocol === "https:" && !DEMO) navigator.serviceWorker.register("sw.js").catch(() => {});
-  if (DEMO || (token && !/reset=/.test(location.hash))) start(); else showLogin();
+  if (location.hash === "#admin") showAdmin();
+  else if (DEMO || (token && !/reset=/.test(location.hash))) start(); else showLogin();
 })();

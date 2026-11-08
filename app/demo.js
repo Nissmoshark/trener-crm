@@ -1,6 +1,6 @@
 // Демо-сервер у браузері: та сама логіка, що й на бекенді, дані — в localStorage.
 (function () {
-  const KEY = "trainer-demo-v1";
+  const KEY = "trainer-demo-v2";
   const pad = (n) => String(n).padStart(2, "0");
   const iso = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const addDays = (day, n) => { const d = new Date(day + "T12:00:00"); d.setDate(d.getDate() + n); return iso(d); };
@@ -49,6 +49,10 @@
       S(-7 * w + 4, "19:00", [[dasha, 400]]); S(-7 * w + 5, "12:00", [[masha, 400]]);
       if (w === 2) S(-7 * w + 2, "16:00", [[alla, 400]], { status: "cancelled" });
     }
+    db.expenses = [{ id: id(), day: addDays(today(), -3), amount: 4000, cat: "rent", note: "Оренда залу" }, { id: id(), day: addDays(today(), -1), amount: 650, cat: "gear", note: "Резинки" }];
+    db.measures = [{ id: id(), client_id: ira, day: addDays(today(), -42), weight: 68.4, waist: 74, hips: 99, chest: null, fat: 27, note: null }, { id: id(), client_id: ira, day: addDays(today(), -21), weight: 67.1, waist: 72, hips: 98, chest: null, fat: 26, note: null }, { id: id(), client_id: ira, day: addDays(today(), -2), weight: 66.2, waist: 70.5, hips: 97, chest: null, fat: 25, note: null }];
+    db.clients.find((c) => c.id === ira).program = JSON.stringify([{ day: "День 1: ноги", name: "Розгинання колін з резинкою", sets: "3", reps: "15", weight: "", note: "" }, { name: "Місток з мʼячем", sets: "4", reps: "12", weight: "", note: "пауза вгорі 2 с" }, { name: "Болгарські присідання", sets: "3", reps: "10", weight: "2×8 кг", note: "" }, { name: "Румунська тяга", sets: "4", reps: "10", weight: "30 кг", note: "" }]);
+    db.settings.month_goal = 40000; db.settings.gym_address = "Зал «Сила», вул. Сирецька 5";
     db.plans = [
       { id: id(), day: today(), time: "13:00", duration_min: 60, title: "Перукар", place: "Салон на Липках", note: null, cat: "beauty", remind_min: 60, reminded: false, done: false },
       { id: id(), day: today(), time: null, duration_min: 0, title: "Купити протеїн і резинки", place: null, note: null, cat: "errand", remind_min: 0, reminded: false, done: false },
@@ -59,7 +63,7 @@
 
   const load = () => { try { const j = localStorage.getItem(KEY); if (j) return JSON.parse(j); } catch {} return seed(); };
   let db = load();
-  db.plans ||= [];
+  db.plans ||= []; db.expenses ||= []; db.measures ||= [];
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch {} };
   const nid = () => db.seq++;
   const fail = (m) => { throw Object.assign(new Error(m), { api: true }); };
@@ -83,10 +87,10 @@
         clients: db.clients.map((c) => {
           const ps = db.participants.filter((p) => p.client_id === c.id).map((p) => ({ p, s: db.sessions.find((s) => s.id === p.session_id) })).filter((x) => x.s && x.s.status !== "cancelled");
           const past = ps.filter((x) => x.s.day <= t).map((x) => x.s.day).sort();
-          return { ...c, visits: ps.length, last_visit: past[past.length - 1] || null, debt: ps.filter((x) => x.p.pay === "debt").reduce((a, x) => a + Number(x.p.price), 0) };
+          return { ...c, visits: ps.length, last_visit: past[past.length - 1] || null, debt: ps.filter((x) => x.p.pay === "debt" && x.s.day <= t).reduce((a, x) => a + Number(x.p.price), 0) };
         }).sort((a, b) => (a.archived - b.archived) || a.name.localeCompare(b.name, "uk")),
         packages: db.packages.map(withUse),
-        settings: { ...db.settings, bot_username: "", tg_linked: false, bot_ready: false, phone_hint: "" },
+        settings: { ...db.settings, bot_username: "", tg_linked: false, bot_ready: false, phone_hint: "", backup_weekly: true },
       };
     },
     plans_range: (b) => ({ plans: db.plans.filter((p) => p.day >= b.from && p.day <= b.to).sort((a, c) => (a.day + (a.time || "")).localeCompare(c.day + (c.time || ""))) }),
@@ -94,11 +98,17 @@
       const p = b.plan || {}; const title = String(p.title || "").trim(); if (!title) fail("Напишіть, що заплановано");
       if (!/^\d{4}-\d{2}-\d{2}$/.test(p.day || "")) fail("Вкажіть дату");
       const vals = { day: p.day, time: p.time ? p.time.padStart(5, "0") : null, duration_min: p.time ? Number(p.duration_min) || 0 : 0, title, place: p.place || null, note: p.note || null, cat: p.cat || "personal", remind_min: p.time ? Number(p.remind_min) || 0 : 0 };
-      let row; if (p.id) { row = db.plans.find((x) => x.id === p.id); Object.assign(row, vals, { reminded: false }); } else { row = { id: nid(), ...vals, reminded: false, done: false }; db.plans.push(row); }
-      return { plan: row };
+      let row; if (p.id) { row = db.plans.find((x) => x.id === p.id); Object.assign(row, vals, { reminded: false }); return { plan: row }; }
+      const weeks = Number(b.repeat_weeks) || 0; row = { id: nid(), ...vals, reminded: false, done: false, series: null }; db.plans.push(row);
+      if (weeks) { row.series = String(row.id); for (let w = 1; w <= weeks; w++) db.plans.push({ ...row, id: nid(), day: addDays(row.day, 7 * w) }); }
+      return { plan: row, created: weeks + 1 };
     },
     plan_done(b) { const p = db.plans.find((x) => x.id === b.id); if (p) p.done = !!b.done; return {}; },
-    plan_delete(b) { db.plans = db.plans.filter((p) => p.id !== b.id); return {}; },
+    plan_delete(b) {
+      const p0 = db.plans.find((p) => p.id === b.id); if (!p0) return {};
+      const ids = new Set(b.scope === "future" && p0.series ? db.plans.filter((p) => p.series === p0.series && p.day >= p0.day).map((p) => p.id) : [p0.id]);
+      db.plans = db.plans.filter((p) => !ids.has(p.id)); return { deleted: ids.size };
+    },
     range: (b) => ({ plans: db.plans.filter((p) => p.day >= b.from && p.day <= b.to), sessions: db.sessions.filter((s) => s.day >= b.from && s.day <= b.to).sort((a, c) => (a.day + a.start_time).localeCompare(c.day + c.start_time)).map(fullSession) }),
     client_save(b) {
       const c = b.client || {}; const name = String(c.name || "").trim(); if (!name) fail("Вкажіть ім'я клієнта");
@@ -111,7 +121,8 @@
       const h = db.participants.filter((p) => p.client_id === b.id).map((p) => { const s = db.sessions.find((x) => x.id === p.session_id); return { id: s.id, day: s.day, start_time: s.start_time, kind: s.kind, title: s.title, status: s.status, price: p.price, pay: p.pay, package_id: p.package_id, part_id: p.id }; })
         .sort((a, c) => (c.day + c.start_time).localeCompare(a.day + a.start_time));
       const sids = new Set(h.map((x) => x.id));
-      return { history: h, packages: db.packages.filter((p) => p.client_id === b.id).map(withUse), moves: db.moves.filter((m) => sids.has(m.session_id)).length };
+      const debts = h.filter((x) => x.pay === "debt" && x.status !== "cancelled" && x.day <= today()).map((x) => ({ part_id: x.part_id, day: x.day, time: x.start_time, price: x.price }));
+      return { history: h, packages: db.packages.filter((p) => p.client_id === b.id).map(withUse), moves: db.moves.filter((m) => sids.has(m.session_id)).length, measures: db.measures.filter((m) => m.client_id === b.id).sort((a, c) => a.day.localeCompare(c.day)), debts };
     },
     session_save(b) {
       const s = b.session || {}; const parts = b.participants || [];
@@ -129,9 +140,22 @@
         }
         return { client_id: p.client_id, price, pay, package_id: pkg };
       });
+      const isNew = !row;
       if (row) Object.assign(row, vals); else { row = { id: nid(), status: "planned", ...vals }; db.sessions.push(row); }
       db.participants = db.participants.filter((x) => x.session_id !== row.id).concat(prepared.map((p) => ({ id: nid(), session_id: row.id, ...p })));
-      return { id: row.id };
+      const weeks = isNew ? Number(b.repeat_weeks) || 0 : 0; let noPkg = 0;
+      if (weeks) {
+        row.series = String(row.id);
+        for (let w = 1; w <= weeks; w++) {
+          const c = { ...row, id: nid(), day: addDays(row.day, 7 * w) }; db.sessions.push(c);
+          for (const p of prepared) {
+            let q = { ...p };
+            if (q.pay === "package") { const pk = pickPackage(q.client_id, -1); if (pk) { q.package_id = pk.id; } else { q.pay = "debt"; q.package_id = null; noPkg++; } }
+            db.participants.push({ id: nid(), session_id: c.id, ...q });
+          }
+        }
+      }
+      return { id: row.id, created: weeks + 1, no_package: noPkg };
     },
     session_status(b) { const s = db.sessions.find((x) => x.id === b.id); if (s) s.status = b.status; return {}; },
     session_move(b) {
@@ -139,7 +163,11 @@
       db.moves.push({ id: nid(), session_id: s.id, from_day: s.day, from_time: s.start_time, to_day: b.day, to_time: b.start_time.padStart(5, "0"), reason: b.reason || null, created_at: new Date().toISOString() });
       s.day = b.day; s.start_time = b.start_time.padStart(5, "0"); s.status = "planned"; return {};
     },
-    session_delete(b) { db.sessions = db.sessions.filter((s) => s.id !== b.id); db.participants = db.participants.filter((p) => p.session_id !== b.id); db.moves = db.moves.filter((m) => m.session_id !== b.id); return {}; },
+    session_delete(b) {
+      const s0 = db.sessions.find((s) => s.id === b.id); if (!s0) return {};
+      const ids = new Set(b.scope === "future" && s0.series ? db.sessions.filter((s) => s.series === s0.series && s.day >= s0.day).map((s) => s.id) : [s0.id]);
+      db.sessions = db.sessions.filter((s) => !ids.has(s.id)); db.participants = db.participants.filter((p) => !ids.has(p.session_id)); db.moves = db.moves.filter((m) => !ids.has(m.session_id)); return { deleted: ids.size };
+    },
     participant_pay(b) { const p = db.participants.find((x) => x.id === b.id); if (p && p.pay !== "package") p.pay = b.pay; return {}; },
     package_save(b) {
       const p = b.package || {}; if (!p.client_id || !(Number(p.sessions_total) > 0)) fail("Вкажіть клієнта й кількість тренувань");
@@ -150,6 +178,20 @@
     },
     package_delete(b) { db.participants.filter((x) => x.package_id === b.id).forEach((x) => { x.pay = "debt"; x.package_id = null; }); db.packages = db.packages.filter((p) => p.id !== b.id); return {}; },
     settings_save(b) { Object.assign(db.settings, b.settings || {}); return {}; },
+    client_program(b) { const c = db.clients.find((x) => x.id === b.id); if (c) c.program = JSON.stringify((b.program || []).filter((r) => r.name)); return { client: c }; },
+    debt_remind(b) {
+      const c = db.clients.find((x) => x.id === b.client_id) || {};
+      const ds = db.participants.filter((p) => p.client_id === b.client_id && p.pay === "debt").map((p) => ({ p, s: db.sessions.find((x) => x.id === p.session_id) })).filter((x) => x.s && x.s.status !== "cancelled" && x.s.day <= today());
+      if (!ds.length) fail("У клієнта немає боргу");
+      const total = ds.reduce((a, x) => a + Number(x.p.price), 0);
+      return { sent: false, total, text: `Привіт, ${c.name}! Нагадую про оплату тренувань:\n${ds.map((x) => `• ${x.s.day}, ${x.s.start_time} — ${x.p.price} грн`).join("\n")}\nРазом: ${total} грн. Дякую! 💪` };
+    },
+    expenses_range: (b) => ({ expenses: db.expenses.filter((e) => e.day >= b.from && e.day <= b.to).sort((a, c) => c.day.localeCompare(a.day)) }),
+    expense_save(b) { const e = b.expense || {}; if (!(Number(e.amount) > 0)) fail("Вкажіть суму"); const vals = { day: e.day, amount: Number(e.amount), cat: e.cat || "other", note: e.note || null }; let row; if (e.id) { row = db.expenses.find((x) => x.id === e.id); Object.assign(row, vals); } else { row = { id: nid(), ...vals }; db.expenses.push(row); } return { expense: row }; },
+    expense_delete(b) { db.expenses = db.expenses.filter((e) => e.id !== b.id); return {}; },
+    measure_save(b) { const m = b.measure || {}; const n = (x) => (x === "" || x == null ? null : Number(x)); const vals = { client_id: m.client_id, day: m.day, weight: n(m.weight), waist: n(m.waist), hips: n(m.hips), chest: n(m.chest), fat: n(m.fat), note: m.note || null }; if (["weight", "waist", "hips", "chest", "fat"].every((k) => vals[k] == null) && !vals.note) fail("Заповніть хоча б один замір"); let row; if (m.id) { row = db.measures.find((x) => x.id === m.id); Object.assign(row, vals); } else { row = { id: nid(), ...vals }; db.measures.push(row); } return { measure: row }; },
+    measure_delete(b) { db.measures = db.measures.filter((m) => m.id !== b.id); return {}; },
+    backup_now: () => fail("Резервна копія працює в робочій версії"),
     change_pin: () => ({ token: "demo" }),
     tg_link_trainer: () => fail("У демо-режимі Telegram недоступний"),
     tg_link_client: () => fail("У демо-режимі Telegram недоступний"),

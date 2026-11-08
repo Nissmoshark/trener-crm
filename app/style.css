@@ -347,13 +347,18 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .part-hint { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.35; }
 .help { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 10px; font-size: 15px; line-height: 1.4; }
 
-/* Суми: удвічі менші, звичайний шрифт тексту (Manrope) з рівними цифрами */
-.total .sum { font: 800 22px/1 var(--text); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
-.total .sum span { font-size: 14px; font-weight: 600; margin-left: 3px; }
-.sess .price { font: 700 15px/1.2 var(--text); font-variant-numeric: tabular-nums; }
-.sum-line b { font: 800 18px var(--text); font-variant-numeric: tabular-nums; }
-.stat b { font: 800 17px var(--text); font-variant-numeric: tabular-nums; }
-.kv b { font: 800 16px var(--text); font-variant-numeric: tabular-nums; }
-.mtiles b { font: 800 16px var(--text); font-variant-numeric: tabular-nums; }
-.wday-h .s, .mcell .v { font-family: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
-.top-list b, .legend b { font-family: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+/* Суми: менші, але тим самим фірмовим шрифтом (Unbounded), як подобалось тренеру */
+.total .sum { font: 700 22px/1 var(--display); letter-spacing: -0.02em; }
+.total .sum span { font-size: 13px; font-weight: 500; margin-left: 3px; }
+.sess .price { font: 600 14px/1.2 var(--display); }
+.sum-line b { font: 600 17px var(--display); }
+.stat b { font: 600 16px var(--display); }
+.kv b { font: 600 15px var(--display); }
+.mtiles b { font: 700 16px var(--display); }
+
+/* Дата українською поверх системного поля (iPhone показує дату мовою телефону) */
+.dt-wrap { position: relative; display: block; }
+.dt-wrap input[type="date"] { color: transparent !important; -webkit-text-fill-color: transparent !important; }
+.dt-wrap input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0; }
+.dt-wrap .dt-show { position: absolute; left: 12px; right: 8px; top: 0; bottom: 0; display: flex; align-items: center; pointer-events: none; font-size: 16px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dt-wrap .dt-show.empty { color: var(--muted); }

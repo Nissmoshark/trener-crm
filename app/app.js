@@ -1074,6 +1074,20 @@
     try { await refreshBase(); } catch { return; }
     render();
   }
+  // Дата українською: системне поле iPhone показує дату мовою телефону, тож малюємо свій підпис поверх
+  const MON_G = ["січня", "лютого", "березня", "квітня", "травня", "червня", "липня", "серпня", "вересня", "жовтня", "листопада", "грудня"];
+  const uaDate = (v) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(v || "")) return ""; const [y, m, d] = v.split("-").map(Number); return `${d} ${MON_G[m - 1]}${y !== new Date().getFullYear() ? " " + y : ""}`; };
+  function dateUa(inp) {
+    if (inp.dataset.ua) return;
+    inp.dataset.ua = "1";
+    const wrap = document.createElement("span"); wrap.className = "dt-wrap";
+    inp.parentNode.insertBefore(wrap, inp); wrap.appendChild(inp);
+    const show = document.createElement("span"); show.className = "dt-show"; show.setAttribute("aria-hidden", "true"); wrap.appendChild(show);
+    const upd = () => { const t = uaDate(inp.value); show.textContent = t || "оберіть дату"; show.classList.toggle("empty", !t); };
+    inp.addEventListener("input", upd); inp.addEventListener("change", upd); upd();
+  }
+  new MutationObserver(() => document.querySelectorAll('input[type="date"]:not([data-ua])').forEach(dateUa)).observe(document.body, { childList: true, subtree: true });
+
   // iPhone ігнорує user-scalable=no, тому блокуємо масштабування жестами вручну
   document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
   document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });

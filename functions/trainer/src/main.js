@@ -23,6 +23,12 @@ export default async ({ req, res, log, error }) => {
   }
   const trig = req.headers["x-appwrite-trigger"];
   if (trig === "schedule") { const r = await core.tick(); if (r.length) log(r.join(", ")); return res.json({ ok: true, done: r }); }
+  // зовнішній «будильник» (напр. cron-job.org щохвилини): GET ?tick=<secret>
+  if (req.query?.tick !== undefined) {
+    const s = await core.settings();
+    if (!s.secret || req.query.tick !== s.secret) return res.text("forbidden", 403);
+    return res.json({ ok: true, done: await core.tick() });
+  }
 
   if (req.query?.tg !== undefined) {
     const s = await core.settings();

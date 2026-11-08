@@ -1,4 +1,4 @@
-// Сховище на Appwrite Databases (REST, без SDK). Ключ — динамічний ключ функції (x-appwrite-key).
+// Сховище на Appwrite TablesDB (REST, без SDK). Ключ — динамічний ключ функції (x-appwrite-key).
 export const DB = "trainer";
 
 // Схема колекцій: [ключ, тип, розмір|null, за замовчуванням]
@@ -42,7 +42,7 @@ export function appwriteStore({ endpoint, project, key, fetchImpl = fetch }) {
     if (!r.ok) { const e = new Error(`appwrite ${method} ${path}: ${r.status} ${j?.message ?? t}`); e.status = r.status; e.type = j?.type; throw e; }
     return j;
   }
-  const cpath = (c) => `/databases/${DB}/collections/${c}`;
+  const cpath = (c) => `/tablesdb/${DB}/tables/${c}`;
   const out = (d) => {
     if (!d) return null;
     const o = { id: /^\d+$/.test(d.$id) ? Number(d.$id) : d.$id, created_at: d.$createdAt };
@@ -71,7 +71,7 @@ export function appwriteStore({ endpoint, project, key, fetchImpl = fetch }) {
   }
   return {
     async get(c, id) {
-      try { return out(await req("GET", `${cpath(c)}/documents/${encodeURIComponent(String(id))}`)); }
+      try { return out(await req("GET", `${cpath(c)}/rows/${encodeURIComponent(String(id))}`)); }
       catch (e) { if (e.status === 404) return null; throw e; }
     },
     async list(c, filters = []) {
@@ -90,42 +90,42 @@ export function appwriteStore({ endpoint, project, key, fetchImpl = fetch }) {
         const qs = [...toQueries(filters), q("limit", null, [500]), q("orderAsc", "$id", [])];
         if (cursor) qs.push(q("cursorAfter", null, [cursor]));
         const p = "?" + qs.map((x) => "queries[]=" + encodeURIComponent(x)).join("&");
-        const j = await req("GET", `${cpath(c)}/documents${p}`);
-        all.push(...j.documents);
-        if (j.documents.length < 500) break;
-        cursor = j.documents[j.documents.length - 1].$id;
+        const j = await req("GET", `${cpath(c)}/rows${p}`);
+        all.push(...j.rows);
+        if (j.rows.length < 500) break;
+        cursor = j.rows[j.rows.length - 1].$id;
       }
       return all.map(out);
     },
     async create(c, data, id) {
-      return out(await req("POST", `${cpath(c)}/documents`, { documentId: String(id ?? data.id), data: inp(data) }));
+      return out(await req("POST", `${cpath(c)}/rows`, { rowId: String(id ?? data.id), data: inp(data) }));
     },
     async update(c, id, data) {
-      return out(await req("PATCH", `${cpath(c)}/documents/${encodeURIComponent(String(id))}`, { data: inp(data) }));
+      return out(await req("PATCH", `${cpath(c)}/rows/${encodeURIComponent(String(id))}`, { data: inp(data) }));
     },
     async remove(c, id) {
-      try { await req("DELETE", `${cpath(c)}/documents/${encodeURIComponent(String(id))}`); }
+      try { await req("DELETE", `${cpath(c)}/rows/${encodeURIComponent(String(id))}`); }
       catch (e) { if (e.status !== 404) throw e; }
     },
     // Створити базу й колекції, якщо їх ще немає
     async ensureSchema(log = () => {}) {
-      try { await req("GET", `/databases/${DB}`); }
-      catch (e) { if (e.status !== 404) throw e; await req("POST", "/databases", { databaseId: DB, name: "Тренування" }); log("db created"); }
+      try { await req("GET", `/tablesdb/${DB}`); }
+      catch (e) { if (e.status !== 404) throw e; await req("POST", "/tablesdb", { databaseId: DB, name: "Тренування" }); log("db created"); }
       const pendingIdx = [];
       for (const [c, def] of Object.entries(SCHEMA)) {
         try { await req("GET", cpath(c)); }
         catch (e) {
           if (e.status !== 404) throw e;
-          await req("POST", `/databases/${DB}/collections`, { collectionId: c, name: c, permissions: [], documentSecurity: false });
-          log("collection " + c);
+          await req("POST", `/tablesdb/${DB}/tables`, { tableId: c, name: c, permissions: [], rowSecurity: false });
+          log("table " + c);
         }
-        const have = new Set((await req("GET", `${cpath(c)}/attributes?queries[]=${encodeURIComponent(q("limit", null, [100]))}`)).attributes.map((a) => a.key));
+        const have = new Set((await req("GET", `${cpath(c)}/columns?queries[]=${encodeURIComponent(q("limit", null, [100]))}`)).columns.map((a) => a.key));
         for (const [k, type, size, def0] of def.attrs) {
           if (have.has(k)) continue;
           const body = { key: k, required: false };
           if (type === "string") body.size = size;
           if (def0 !== undefined) body.default = def0;
-          await req("POST", `${cpath(c)}/attributes/${type}`, body);
+          await req("POST", `${cpath(c)}/columns/${type}`, body);
           log(`attr ${c}.${k}`);
         }
         pendingIdx.push([c, def.indexes]);
@@ -134,7 +134,7 @@ export function appwriteStore({ endpoint, project, key, fetchImpl = fetch }) {
       for (const [c, idx] of pendingIdx) {
         if (!idx.length) continue;
         for (let i = 0; i < 40; i++) {
-          const a = (await req("GET", `${cpath(c)}/attributes?queries[]=${encodeURIComponent(q("limit", null, [100]))}`)).attributes;
+          const a = (await req("GET", `${cpath(c)}/columns?queries[]=${encodeURIComponent(q("limit", null, [100]))}`)).columns;
           if (a.every((x) => x.status === "available")) break;
           await new Promise((r) => setTimeout(r, 500));
         }
@@ -142,7 +142,7 @@ export function appwriteStore({ endpoint, project, key, fetchImpl = fetch }) {
         for (const cols of idx) {
           const key = "ix_" + cols.join("_");
           if (have.has(key)) continue;
-          await req("POST", `${cpath(c)}/indexes`, { key, type: "key", attributes: cols });
+          await req("POST", `${cpath(c)}/indexes`, { key, type: "key", columns: cols });
           log("index " + c + "." + key);
         }
       }

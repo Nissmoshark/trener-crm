@@ -374,11 +374,14 @@
       <label class="toggle"><input type="checkbox" id="c-remind" ${x.remind !== false ? "checked" : ""}> Нагадувати в Telegram</label>
       <div class="foot"><button class="btn blue" data-act="saveClient" data-id="${c ? c.id : ""}">Зберегти</button></div>`, (bg) => { if (!c) $("#c-name", bg).focus(); });
   }
-  function packageSheet(p, clientId) {
+  let pkgReturn = null; // продаж абонемента просто з запису тренування
+  function packageSheet(p, clientId, ret = null) {
+    pkgReturn = ret;
     const x = p || { client_id: clientId, title: "", sessions_total: 8, price: "", paid: true, bought_on: today(), expires_on: "" };
     const c = clientById(x.client_id);
     openSheet(`
-      <h2>${p ? "Абонемент" : "Новий абонемент"}<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+      <h2>${p ? "Абонемент" : "Новий абонемент"}<button class="icon-btn" data-act="${ret ? "pkgBack" : "close"}" aria-label="${ret ? "Назад до тренування" : "Закрити"}">${ret ? ICON.left : ICON.close}</button></h2>
+      ${ret ? '<p style="margin:-4px 0 12px;font-size:14px;color:var(--muted)">У клієнта немає активного абонемента. Оформіть його — і це тренування одразу спишеться з нього.</p>' : ""}
       <div style="margin:-6px 0 12px;color:var(--muted)">${esc(c ? c.name : "")}</div>
       <div class="row2">
         <label class="field"><span>Тренувань</span><input id="p-n" type="number" inputmode="numeric" value="${x.sessions_total}" min="1"></label>
@@ -390,7 +393,7 @@
       </div>
       <label class="field"><span>Назва (необовʼязково)</span><input id="p-title" value="${esc(x.title || "")}" placeholder="Місячний"></label>
       <label class="toggle"><input type="checkbox" id="p-paid" ${x.paid ? "checked" : ""}> Оплачено</label>
-      <div class="foot"><button class="btn blue" data-act="savePackage" data-id="${p ? p.id : ""}" data-client="${x.client_id}">Зберегти</button>${p ? '<button class="btn red" data-act="deletePackage" data-id="' + p.id + '">Видалити</button>' : ""}</div>`);
+      <div class="foot">${ret ? '<button class="btn light" data-act="pkgBack">Назад</button>' : ""}<button class="btn blue" data-act="savePackage" data-id="${p ? p.id : ""}" data-client="${x.client_id}">${ret ? "Оформити й списати" : "Зберегти"}</button>${p ? '<button class="btn red" data-act="deletePackage" data-id="' + p.id + '">Видалити</button>' : ""}</div>`);
   }
 
   // ───── Статистика ─────
@@ -517,7 +520,7 @@
     pay(d) {
       syncDraft();
       const p = draft.participants[+d.i];
-      if (d.pay === "package" && !activePkg(p.client_id) && !p.package_id) { toast("Немає активного абонемента — продайте його в картці клієнта", true); return; }
+      if (d.pay === "package" && !activePkg(p.client_id) && !p.package_id) { packageSheet(null, p.client_id, { i: +d.i }); return; }
       if (p.pay === "package" && d.pay !== "package") { p.package_id = null; p.price = (clientById(p.client_id) || {}).price || 0; }
       p.pay = d.pay; drawSessionSheet();
     },
@@ -581,8 +584,12 @@
     async savePackage(d) {
       const v = (id) => $("#" + id).value;
       await must("package_save", { package: { id: d.id ? +d.id : undefined, client_id: +d.client, sessions_total: v("p-n"), price: v("p-price"), bought_on: v("p-bought"), expires_on: v("p-exp"), title: v("p-title"), paid: $("#p-paid").checked } });
-      closeSheet(); toast("Абонемент збережено"); await refreshBase(); render();
+      const ret = pkgReturn; pkgReturn = null;
+      await refreshBase();
+      if (ret && draft && draft.participants[ret.i]) { draft.participants[ret.i].pay = "package"; draft.participants[ret.i].package_id = null; drawSessionSheet(); toast("Абонемент оформлено — тренування спишеться з нього"); return; }
+      closeSheet(); toast("Абонемент збережено"); render();
     },
+    pkgBack() { pkgReturn = null; drawSessionSheet(); },
     deletePackage(d) {
       askConfirm("Видалити абонемент? Тренування, списані з нього, стануть боргом.", "Видалити", async () => {
         await must("package_delete", { id: +d.id }); closeSheet(); toast("Абонемент видалено"); await refreshBase(); render();

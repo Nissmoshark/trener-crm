@@ -346,3 +346,14 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .plates-legend.inline span { margin-right: 4px; }
 .part-hint { font-size: 13px; color: var(--muted); margin-top: 8px; line-height: 1.35; }
 .help { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 10px; font-size: 15px; line-height: 1.4; }
+
+/* Суми: удвічі менші, звичайний шрифт тексту (Manrope) з рівними цифрами */
+.total .sum { font: 800 22px/1 var(--text); letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.total .sum span { font-size: 14px; font-weight: 600; margin-left: 3px; }
+.sess .price { font: 700 15px/1.2 var(--text); font-variant-numeric: tabular-nums; }
+.sum-line b { font: 800 18px var(--text); font-variant-numeric: tabular-nums; }
+.stat b { font: 800 17px var(--text); font-variant-numeric: tabular-nums; }
+.kv b { font: 800 16px var(--text); font-variant-numeric: tabular-nums; }
+.mtiles b { font: 800 16px var(--text); font-variant-numeric: tabular-nums; }
+.wday-h .s, .mcell .v { font-family: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.top-list b, .legend b { font-family: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }

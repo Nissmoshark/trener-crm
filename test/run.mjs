@@ -464,7 +464,8 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
   assert.equal((await OK("client_history", { id: c2.id }, TI)).history.length, 0);
   await OK("session_delete", { id: 6001 }, T2); // чуже — не видаляється
   assert.equal((await OK("range", { from: "2026-11-09", to: "2026-11-09" }, TI)).sessions.length, 1);
-  await BAD("participant_pay", { id: 7001, pay: "paid" }, T2);
+  await OK("participant_pay", { id: 7001, pay: "paid" }, T2); // чужий запис — без змін
+  assert.equal((await stM.get("parts", 7001)).pay, "debt");
   assert.equal((await OK("client_history", { id: 5001 }, TI)).debts.length, 1);
   await BAD("session_save", { session: { day: "2026-11-10", start_time: "10:00" }, participants: [{ client_id: 5001, price: 1, pay: "paid" }] }, T2);
   // підписка Олени закінчується → лише перегляд

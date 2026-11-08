@@ -473,6 +473,7 @@ export function createCore(st, opts = {}) {
       const existing = id ? await partsFor([["session_id", "eq", id]]) : [];
       for (const p of parts) {
         const cid = Number(p.client_id);
+        if (!(await D.get("clients", cid))) throw new ApiError("Клієнта не знайдено");
         const pay = ["paid", "debt", "package"].includes(p.pay) ? p.pay : "paid";
         let price = Number(p.price) || 0, pkg = null;
         if (pay === "package") {
@@ -484,7 +485,7 @@ export function createCore(st, opts = {}) {
             pkg = found.id;
           }
           const pk = await D.get("packages", pkg);
-          if (!pk) throw new ApiError("Абонемент не знайдено");
+          if (!pk || pk.client_id !== cid) throw new ApiError("Абонемент не знайдено");
           price = round2(Number(pk.price) / pk.sessions_total);
         }
         prepared.push({ client_id: cid, price, pay, package_id: pkg });
@@ -567,6 +568,7 @@ export function createCore(st, opts = {}) {
     async package_save(b) {
       const p = b.package ?? {};
       if (!p.client_id || !(Number(p.sessions_total) > 0)) throw new ApiError("Вкажіть клієнта й кількість тренувань");
+      if (!(await D.get("clients", Number(p.client_id)))) throw new ApiError("Клієнта не знайдено");
       const vals = {
         client_id: Number(p.client_id), title: p.title ? String(p.title).slice(0, 200) : null, sessions_total: Math.round(Number(p.sessions_total)),
         price: Number(p.price) || 0, paid: p.paid !== false, bought_on: isDay(p.bought_on) ? p.bought_on : local().day, expires_on: isDay(p.expires_on) ? p.expires_on : null,
@@ -676,6 +678,7 @@ export function createCore(st, opts = {}) {
     async measure_save(b) {
       const m = b.measure ?? {};
       if (!m.client_id || !isDay(m.day)) throw new ApiError("Вкажіть клієнта й дату");
+      if (!(await D.get("clients", Number(m.client_id)))) throw new ApiError("Клієнта не знайдено");
       const vals = { client_id: Number(m.client_id), day: m.day, weight: num0(m.weight), waist: num0(m.waist), hips: num0(m.hips), chest: num0(m.chest), fat: num0(m.fat), note: m.note ? String(m.note).slice(0, 500) : null };
       if ([vals.weight, vals.waist, vals.hips, vals.chest, vals.fat].every((x) => x == null) && !vals.note) throw new ApiError("Заповніть хоча б один замір");
       return { measure: m.id ? await D.update("measures", m.id, vals) : await D.create("measures", vals, newId()) };
@@ -899,7 +902,7 @@ export function createCore(st, opts = {}) {
       if (!fn) return [400, { ok: false, error: "Невідома дія" }];
       const sub = subInfo(T.data);
       if (!sub.writable && !READ_OK.has(action))
-        return [402, { ok: false, error: sub.state === "blocked" ? "Кабінет призупинено. Звʼяжіться з підтримкою." : "Підписка закінчилась — дані доступні для перегляду. Продовжте її в «Ще» → «Підписка».", code: "subscription" }];
+        return [402, { ok: false, error: sub.state === "blocked" ? "Кабінет призупинено. Звʼяжіться з підтримкою." : "Підписка закінчилась — дані доступні для перегляду. Продовжте її в «Ще» → «Підписка».", reason: "subscription" }];
       return [200, { ok: true, ...(await inTenant(T, () => fn(body, ctx))) }];
     } catch (e) {
       if (e instanceof ApiError) return [400, { ok: false, error: e.message }];

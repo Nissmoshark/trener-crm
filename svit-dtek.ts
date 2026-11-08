@@ -243,6 +243,8 @@ export async function dtekTick(force = false) {
       if (!sc) return out;
     }
   }
+  // інтервали для віджета на головному екрані
+  if (sc) { const iv = JSON.stringify(offIntervals(sc)); if (iv !== s.dtek_iv) await setSetting("dtek_iv", iv); }
   // попередження перед відключенням
   const before = Number(s.dtek_before ?? 30);
   if (s.dtek_notify !== "0" && before > 0 && sc) {

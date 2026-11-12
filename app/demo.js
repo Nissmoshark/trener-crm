@@ -35,7 +35,8 @@
       for (const [cid, price, pay = "paid"] of parts) db.participants.push({ id: id(), session_id: s.id, client_id: cid, price: pay === "package" ? 300 : price, pay, package_id: pay === "package" ? pk.id : null });
       return s;
     };
-    S(0, "10:00", [[ira, 350]]); S(0, "17:30", [[masha, 400]]); S(0, "18:30", [[yulia, 400]]); S(0, "19:30", [[nadia, 0, "package"]]);
+    S(-7, "10:00", [[ira, 350]], { note: "Ягодиці: місток 4×12, болгарські 3×10" }); S(-7, "17:30", [[masha, 400]], { note: "Спина: тяга верхнього блоку, гіперекстензія" });
+    S(0, "10:00", [[ira, 350]]); S(0, "17:30", [[masha, 400]]); S(0, "18:30", [[yulia, 400]], { online: true }); S(0, "19:30", [[nadia, 0, "package"]]);
     S(1, "09:00", [[natali, 400]]); S(1, "14:00", [[mariaN, 400]]); S(1, "15:00", [[vova, 350]]); S(1, "16:30", [[olena, 400], [igor, 400]], { kind: "split" });
     S(2, "10:00", [[ira, 350]]); S(2, "12:00", [[anastasia, 400]]); S(2, "13:00", [[mariaN, 400]]); S(2, "14:00", [[arina, 400, "debt"]]); S(2, "16:00", [[alla, 400]]); S(2, "16:30", [[dinys, 400]]); S(2, "18:30", [[yulia, 400]]);
     S(3, "16:30", [[vova, 350]]); S(3, "17:30", [[tanya, 400]]); S(3, "18:30", [], { kind: "group", title: "Група", extra_amount: 900 }); S(3, "19:30", [[nadia, 0, "package"]]);
@@ -71,6 +72,14 @@
   const withUse = (p) => ({ ...p, used: used(p.id), used_done: db.participants.filter((x) => x.package_id === p.id && (db.sessions.find((s) => s.id === x.session_id) || {}).status !== "cancelled" && (db.sessions.find((s) => s.id === x.session_id) || {}).day <= today()).length });
   const pickPackage = (cid, exSess) => db.packages.filter((p) => p.client_id === cid && (!p.expires_on || p.expires_on >= today()))
     .sort((a, b) => (a.bought_on < b.bought_on ? -1 : 1)).find((p) => used(p.id, exSess) < p.sessions_total);
+  // нотатка з попереднього тренування клієнта (як на сервері)
+  const withPrev = (s) => {
+    if (s.participants.length !== 1) return s;
+    const cid = s.participants[0].client_id, key = s.day + " " + s.start_time;
+    const prev = db.sessions.filter((x) => x.note && x.day + " " + x.start_time < key && db.participants.some((p) => p.session_id === x.id && p.client_id === cid))
+      .sort((a, b) => (b.day + b.start_time).localeCompare(a.day + a.start_time))[0];
+    return prev ? { ...s, prev_note: prev.note, prev_day: prev.day } : s;
+  };
   const fullSession = (s) => ({
     ...s,
     participants: db.participants.filter((p) => p.session_id === s.id).map((p) => ({ ...p, name: (db.clients.find((c) => c.id === p.client_id) || {}).name })),
@@ -111,7 +120,7 @@
       const ids = new Set(b.scope === "future" && p0.series ? db.plans.filter((p) => p.series === p0.series && p.day >= p0.day).map((p) => p.id) : [p0.id]);
       db.plans = db.plans.filter((p) => !ids.has(p.id)); return { deleted: ids.size };
     },
-    range: (b) => ({ plans: db.plans.filter((p) => p.day >= b.from && p.day <= b.to), sessions: db.sessions.filter((s) => s.day >= b.from && s.day <= b.to).sort((a, c) => (a.day + a.start_time).localeCompare(c.day + c.start_time)).map(fullSession) }),
+    range: (b) => ({ plans: db.plans.filter((p) => p.day >= b.from && p.day <= b.to), sessions: db.sessions.filter((s) => s.day >= b.from && s.day <= b.to).sort((a, c) => (a.day + a.start_time).localeCompare(c.day + c.start_time)).map(fullSession).map(withPrev) }),
     client_save(b) {
       const c = b.client || {}; const name = String(c.name || "").trim(); if (!name) fail("Вкажіть ім'я клієнта");
       const vals = { name, phone: c.phone ? String(c.phone).trim() : null, price: c.price === "" || c.price == null ? null : Number(c.price), notes: c.notes || null, remind: c.remind !== false };
@@ -130,7 +139,7 @@
       const s = b.session || {}; const parts = b.participants || [];
       if (!/^\d{4}-\d{2}-\d{2}$/.test(s.day || "") || !/^\d{1,2}:\d{2}$/.test(s.start_time || "")) fail("Вкажіть дату й час");
       if (!parts.length && !(s.kind === "group" || Number(s.extra_amount) > 0)) fail("Додайте клієнта");
-      const vals = { day: s.day, start_time: s.start_time.padStart(5, "0"), duration_min: Number(s.duration_min) || 60, kind: s.kind || "personal", title: s.title || null, extra_amount: Number(s.extra_amount) || 0, note: s.note || null };
+      const vals = { day: s.day, start_time: s.start_time.padStart(5, "0"), duration_min: Number(s.duration_min) || 60, kind: s.kind || "personal", title: s.title || null, extra_amount: Number(s.extra_amount) || 0, note: s.note || null, online: !!s.online };
       let row = s.id ? db.sessions.find((x) => x.id === s.id) : null;
       const prepared = parts.map((p) => {
         let pay = p.pay || "paid", price = Number(p.price) || 0, pkg = null;

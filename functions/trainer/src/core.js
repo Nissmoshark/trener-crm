@@ -283,6 +283,29 @@ export function createCore(st, opts = {}) {
     }
     return ss;
   }
+  // Нотатка з попереднього тренування клієнта — «що робили минулого разу»
+  async function addPrevNotes(ss) {
+    const cids = [...new Set(ss.flatMap((s) => s.participants.map((p) => p.client_id)))];
+    if (!cids.length) return;
+    const ps = (await partsFor([["client_id", "in", cids]])).filter((p) => p.status !== "cancelled");
+    const sids = [...new Set(ps.map((p) => p.session_id))];
+    const withNote = new Map();
+    for (let i = 0; i < sids.length; i += 100) {
+      for (const x of await all("sessions", [["id", "in", sids.slice(i, i + 100)]])) if (x.note && String(x.note).trim()) withNote.set(x.id, x);
+    }
+    for (const s of ss) {
+      if (s.participants.length !== 1) continue;
+      const cid = s.participants[0].client_id, key = s.day + " " + s.start_time;
+      let best = null;
+      for (const p of ps) {
+        if (p.client_id !== cid || p.session_id === s.id) continue;
+        const x = withNote.get(p.session_id); if (!x) continue;
+        const k = x.day + " " + x.start_time;
+        if (k < key && (!best || k > best.day + " " + best.start_time)) best = x;
+      }
+      if (best) { s.prev_note = String(best.note).slice(0, 300); s.prev_day = best.day; }
+    }
+  }
   const PLAN_CATS = ["personal", "beauty", "health", "errand", "work"];
   async function plansRange(from, to) {
     return (await all("plans", [["day", "gte", from], ["day", "lte", to]]))
@@ -416,7 +439,9 @@ export function createCore(st, opts = {}) {
     },
     async range(b) {
       if (!isDay(b.from) || !isDay(b.to)) throw new ApiError("Невірні дати");
-      return { sessions: await sessionsRange(b.from, b.to), plans: await plansRange(b.from, b.to) };
+      const ss = await sessionsRange(b.from, b.to);
+      await addPrevNotes(ss);
+      return { sessions: ss, plans: await plansRange(b.from, b.to) };
     },
     // ── Особисті плани (перукар, справи, тощо) ──
     async plans_range(b) {
@@ -465,7 +490,7 @@ export function createCore(st, opts = {}) {
       const vals = {
         name, phone: c.phone ? String(c.phone).trim().slice(0, 32) : null,
         price: c.price === "" || c.price == null ? null : Number(c.price) || 0,
-        notes: c.notes ? String(c.notes).slice(0, 5000) : null, remind: c.remind !== false,
+        notes: c.notes ? String(c.notes).slice(0, 5000) : null, remind: c.remind !== false, online: !!c.online,
       };
       if (c.program !== undefined) vals.program = cleanProgram(c.program);
       if (c.id) {
@@ -505,6 +530,7 @@ export function createCore(st, opts = {}) {
         day: s.day, start_time: hhmm(s.start_time), duration_min: Number(s.duration_min) || 60,
         kind: ["personal", "split", "group"].includes(s.kind) ? s.kind : "personal",
         title: s.title ? String(s.title).slice(0, 200) : null, extra_amount: Number(s.extra_amount) || 0, note: s.note ? String(s.note).slice(0, 2000) : null,
+        online: !!s.online,
       };
       let id = Number(s.id) || 0, status = "planned";
       // спершу перевіряємо абонементи, щоб не записати половину
@@ -1108,7 +1134,10 @@ export function createCore(st, opts = {}) {
     const pkg = ps.filter((p) => p.pay === "package").reduce((a, p) => a + Number(p.price), 0);
     const moves = (await all("moves", [["created_day", "eq", day]])).length;
     const L = [`📊 <b>Підсумок дня</b> · ${fmtDay(day)}`, "", `Тренувань: <b>${ok.length}</b>`, `Дохід: <b>${money(ok.reduce((a, s) => a + sessTotal(s), 0))}</b>`];
-    if (pkg) L.push(`з них з абонементів: ${money(pkg)}`);
+    const grp = ok.filter((s) => s.kind === "group").reduce((a, s) => a + sessTotal(s), 0);
+    const onl = ok.filter((s) => s.online).reduce((a, s) => a + sessTotal(s), 0);
+    if (grp) L.push(`з них групи: ${money(grp)}`);
+    if (onl) L.push(`з них онлайн: ${money(onl)}`);
     if (debt) L.push(`⚠️ Борг за день: ${money(debt)}`);
     if (cancelled) L.push(`Скасовано: ${cancelled}`);
     if (noShow) L.push(`Не прийшли: ${noShow}`);
@@ -1122,7 +1151,8 @@ export function createCore(st, opts = {}) {
   async function dayReport(day, html = false) {
     const s = await TS();
     const e = html ? esc : (x) => String(x ?? "");
-    const ok = (await sessionsRange(day, day)).filter((x) => x.status !== "cancelled");
+    // онлайн-тренування — лише для тренера, у звіт адміністратору залу не йдуть
+    const ok = (await sessionsRange(day, day)).filter((x) => x.status !== "cancelled" && !x.online);
     const [y, m, d] = day.split("-");
     const L = [`${html ? "📋 <b>" : "📋 "}Звіт за ${d}.${m}.${y}${s.trainer_name ? " · " + e(s.trainer_name) : ""}${html ? "</b>" : ""}`, ""];
     let i = 0, pkg = 0, debt = 0;
@@ -1302,6 +1332,19 @@ export function createCore(st, opts = {}) {
   async function tick() {
     try { return await tickInner(); } catch (e) { await logError("tick", e); return ["error"]; }
   }
+  // Один Telegram — один кабінет. Якщо той самий чат прив'язаний до кількох кабінетів
+  // (наприклад, тренер колись зареєструвався вдруге), лишаємо кабінет з клієнтами, інші відв'язуємо.
+  async function dedupeChats() {
+    const by = new Map();
+    for (const T of await tenantsAll()) { const c = T?.data?.trainer_chat_id; if (c) by.set(c, [...(by.get(c) || []), T]); }
+    for (const [, ts] of by) {
+      if (ts.length < 2) continue;
+      const scored = [];
+      for (const T of ts) scored.push({ T, n: (await st.list("clients", [["tid", "eq", T.id]])).length + (T.data.lifetime === "1" ? 1e6 : 0) });
+      scored.sort((a, b) => b.n - a.n);
+      for (const { T } of scored.slice(1)) { T.data.trainer_chat_id = ""; await saveTenant(T); log(`chat dedupe: unlinked ${T.id}`); }
+    }
+  }
   async function tickInner() {
     const g = await settings(true);
     const L = local(), out = [];
@@ -1310,6 +1353,7 @@ export function createCore(st, opts = {}) {
     const SL = Math.max(0, Math.min(SLACK, gap));
     await kvSet("last_tick", String(nowMs()));
     if (!g.bot_token) return out;
+    await dedupeChats();
     for (const T of await tenantsAll()) {
       try { await inTenant(T, () => tickTenant(T, L, SL, out)); } catch (e) { await logError("tick " + T.id, e); }
     }

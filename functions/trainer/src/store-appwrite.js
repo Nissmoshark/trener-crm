@@ -8,7 +8,7 @@ export const SCHEMA = {
   clients: {
     attrs: [["tid", "string", 32], ["name", "string", 200], ["phone", "string", 32], ["price", "float"], ["notes", "string", 5000],
       ["remind", "boolean", null, true], ["tg_chat_id", "string", 32], ["tg_code", "string", 32], ["archived", "boolean", null, false],
-      ["program", "string", 10000]],
+      ["program", "string", 10000], ["online", "boolean", null, false]],
     indexes: [["tid"], ["tg_code"], ["tg_chat_id"]],
   },
   packages: {
@@ -18,7 +18,7 @@ export const SCHEMA = {
   },
   sessions: {
     attrs: [["tid", "string", 32], ["day", "string", 10], ["start_time", "string", 5], ["duration_min", "integer"], ["kind", "string", 16],
-      ["title", "string", 200], ["status", "string", 16], ["extra_amount", "float"], ["note", "string", 2000], ["reminded", "boolean", null, false], ["series", "string", 32]],
+      ["title", "string", 200], ["status", "string", 16], ["extra_amount", "float"], ["note", "string", 2000], ["reminded", "boolean", null, false], ["series", "string", 32], ["online", "boolean", null, false]],
     indexes: [["tid"], ["day"], ["series"]],
   },
   parts: {

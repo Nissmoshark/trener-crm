@@ -396,6 +396,36 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
     await OK("report_unlink", { chat: "700" }, T);
     assert.equal((await OK("bootstrap", {}, T)).settings.report_admins.length, 0);
     await BAD("report_send_now", {}, T, /адміністратора/); }
+  // нотатки, онлайн, підсумок дня
+  { const on = (await OK("client_save", { client: { name: "Онлайн Оля", price: 300, online: true } }, T)).client;
+    assert.equal(on.online, true);
+    await OK("session_save", { session: { day: "2026-11-03", start_time: "09:00", note: "Присід 4×10, тяга" }, participants: [{ client_id: on.id, price: 300 }] }, T);
+    await OK("session_save", { session: { day: "2026-11-05", start_time: "09:00", online: true }, participants: [{ client_id: on.id, price: 300 }] }, T);
+    await OK("session_save", { session: { day: "2026-11-05", start_time: "19:00", kind: "group", title: "Група", extra_amount: 900 }, participants: [] }, T);
+    const r5 = (await OK("range", { from: "2026-11-05", to: "2026-11-05" }, T)).sessions;
+    const os = r5.find((x) => x.online);
+    assert.ok(os, "онлайн-тренування збережено");
+    assert.equal(os.prev_note, "Присід 4×10, тяга"); assert.equal(os.prev_day, "2026-11-03");
+    const ru = (await OK("report_link", {}, T)).url.split("start=")[1];
+    await c3.onUpdate({ message: { chat: { id: 701, type: "private" }, from: { id: 701, first_name: "Адмін" }, text: "/start " + ru } });
+    await OK("report_send_now", { day: "2026-11-05" }, T);
+    const rep2 = out3.filter((x) => x.chat_id === 701).at(-1).text;
+    assert.ok(!/Онлайн Оля/.test(rep2), "онлайн не йде у звіт залу"); assert.match(rep2, /Група — 900/);
+    await OK("report_unlink", { chat: "701" }, T); }
+  // один Telegram у двох кабінетах — дубль відвʼязується
+  { const T2 = (await OK("setup", { name: "Дубль", phone: "0501112233", password: "Trener2026" })).token;
+    const t2 = (await OK("bootstrap", {}, T2));
+    // вручну привʼязуємо той самий чат до другого кабінету (як було до виправлення)
+    const ten = (await st3.list("tenants")).find((x) => x.phone === "0501112233" || (JSON.parse(x.data).trainer_phone || "").endsWith("501112233"));
+    const dd = JSON.parse(ten.data); dd.trainer_chat_id = "100"; await st3.update("tenants", ten.id, { data: JSON.stringify(dd), chat: "100" });
+    out3.length = 0;
+    await c3.tick();
+    const t2d = JSON.parse((await st3.get("tenants", ten.id)).data);
+    assert.equal(t2d.trainer_chat_id, "", "порожній кабінет відвʼязано");
+    void t2;
+    // прибрати тестові дані, щоб не зсувати лічильники адмінки нижче
+    await st3.remove("tenants", ten.id);
+    for (const c of await st3.list("clients")) if (c.name === "Онлайн Оля") await st3.remove("clients", c.id); }
   // щонеділі автоматично
   clk = Date.parse("2026-11-15T19:40:00Z"); // нд 21:40
   t = await c3.tick(); assert.ok(t.includes("backup"), "weekly backup " + t);

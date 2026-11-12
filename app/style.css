@@ -405,3 +405,18 @@ html, body { overflow-x: hidden; max-width: 100%; }
 .foot.col { flex-direction: column; align-items: stretch; gap: 8px; }
 .foot.col .btn { flex: none; min-height: 48px; }
 .link-btn { background: none; border: 0; color: var(--plate-blue); font: 600 14px var(--text); padding: 12px 0 4px; width: 100%; text-align: center; }
+
+/* Нотатка на плитці, онлайн-тренування */
+.sess .snote { font-size: 12.5px; color: var(--ink); opacity: .78; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sess .snote.prev { color: var(--muted); opacity: 1; font-style: italic; }
+.sess.online .time { background: #0f9488; color: #fff; }
+.tag.online { background: color-mix(in srgb, #0f9488 16%, transparent); color: #0b7a70; }
+.prev-note { margin: 0 0 8px; padding: 8px 10px; background: var(--blue-soft, #eef3fb); border-radius: 10px; color: var(--ink); font-size: 13.5px; }
+.toggle.online-t small, .toggle small { color: var(--muted); font-size: 12.5px; }
+.tg-sum { display: block; width: calc(100% - 32px); margin: 0 16px 10px; text-align: left; border: 0; background: var(--paper); border-radius: 12px; padding: 10px 12px; font: 500 13.5px var(--text); color: var(--muted); box-shadow: 0 1px 0 var(--line); }
+.tg-sum b { color: var(--ink); }
+.tg-ok { color: #1f7a45; font-weight: 600; }
+/* iPhone: без системного меню при довгому натисканні на плитки й кнопки */
+button, .sess, .wday, .mcell, .crow { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+
+.mrow .tag, .hist .tag { flex: none; width: auto; display: inline-block; }

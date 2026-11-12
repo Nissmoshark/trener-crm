@@ -170,17 +170,19 @@
     else if (s.participants.length && s.participants.every((p) => p.confirm === "yes")) tags.push('<span class="tag ok">✅ підтверджено</span>');
     if (s.series) tags.push('<span class="tag moved">↻</span>');
     if (s.moves && s.moves.length) tags.push(`<span class="tag moved">перенесено з ${s.moves[s.moves.length - 1].from_time}</span>`);
-    const sub = [s.kind !== "personal" ? KIND[s.kind] : `${s.duration_min} хв`, ...tags];
+    // замість «60 хв» (тривалість і так у блоці часу) — нотатка: цього тренування або минулого разу
+    const noteTxt = s.note ? s.note : s.prev_note ? `${dShort(s.prev_day)}: ${s.prev_note}` : "";
+    const sub = [s.kind !== "personal" ? KIND[s.kind] : "", s.online ? '<span class="tag online">онлайн</span>' : "", ...tags].filter(Boolean);
     const pk = s.participants.some((p) => p.pay === "package");
-    return `<button class="sess ${s.kind} ${s.status}${pk ? " abon" : ""}" data-act="editSession" data-id="${s.id}"${pk ? ' aria-label="Абонемент"' : ""}>
+    return `<button class="sess ${s.kind} ${s.status}${pk ? " abon" : ""}${s.online ? " online" : ""}" data-act="editSession" data-id="${s.id}"${pk ? ' aria-label="Абонемент"' : ""}>
       <div class="time">${pk ? '<i class="abon-a" title="Абонемент">А</i>' : ""}${s.start_time}<small>${s.duration_min} хв</small></div>
-      <div class="body"><div class="who">${esc(sessWho(s))}</div><div class="sub">${sub.join(" ")}</div></div>
+      <div class="body"><div class="who">${esc(sessWho(s))}</div>${sub.length ? `<div class="sub">${sub.join(" ")}</div>` : ""}${noteTxt ? `<div class="snote${s.note ? "" : " prev"}">${esc(noteTxt)}</div>` : !sub.length ? `<div class="sub">${s.duration_min} хв</div>` : ""}</div>
       <div class="price money">${num(sessTotal(s) || (s.status === "cancelled" ? s.participants.reduce((a, p) => a + p.price, 0) + Number(s.extra_amount) : 0))}</div>
     </button>`;
   }
   // Звіт за день: простий текст для Telegram (такий самий надсилає бот)
   function reportText(day, ss) {
-    const ok = ss.filter((x) => x.status !== "cancelled");
+    const ok = ss.filter((x) => x.status !== "cancelled" && !x.online);
     const [y, m, d] = day.split("-"), name = st.settings.trainer_name;
     const L = [`📋 Звіт за ${d}.${m}.${y}${name ? " · " + name : ""}`, ""];
     let i = 0, pkg = 0, debt = 0;
@@ -351,6 +353,8 @@
       </div>` : ""}
       <div class="parts">${s.participants.map((p, i) => partRow(p, i)).join("")}</div>
       ${(s.kind === "personal" && s.participants.length >= 1) ? '<button class="btn light wide" style="margin-bottom:12px" data-act="addMore">+ Додати ще клієнта (спліт)</button>' : pickerHtml()}
+      <label class="toggle online-t"><input type="checkbox" id="f-online" ${s.online ? "checked" : ""}> Онлайн <small>— рахується у ваш дохід, але не йде у звіт адміністратору залу</small></label>
+      ${s.prev_note && !s.note ? `<p class="hint prev-note">Минулого разу (${dShort(s.prev_day)}): ${esc(s.prev_note)}</p>` : ""}
       <label class="field"><span>Нотатка</span><textarea id="f-note" rows="2" placeholder="Що робили, самопочуття…">${esc(s.note || "")}</textarea></label>
       ${isNew ? `<label class="field"><span>Повторювати щотижня</span><select id="f-rep">${REPEAT.map(([v, l]) => `<option value="${v}" ${Number(s.repeat || 0) === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>` : s.series ? '<p class="hint">↻ Це тренування — частина щотижневої серії.</p>' : ""}
       <div class="sum-line"><span>Вартість</span><b>${num(total)} грн</b></div>
@@ -381,6 +385,7 @@
     const done = p.used_done ?? p.used, booked = Math.max(0, p.used - done), free = Math.max(0, p.sessions_total - p.used);
     return { done, booked, free, total: p.sessions_total };
   }
+  const pkShortTitle = (p) => p.title || `${p.sessions_total} трен.`;
   const pkgShort = (p) => { const x = pkgState(p); return `вільно ${x.free} з ${x.total}`; };
   function activePkg(cid) {
     return st.packages.filter((p) => p.client_id === cid && (!p.expires_on || p.expires_on >= today()) && p.used < p.sessions_total).sort((a, b) => (a.bought_on < b.bought_on ? -1 : 1))[0];
@@ -423,11 +428,13 @@
     if (v("f-title") !== undefined) draft.title = v("f-title");
     if (v("f-rep") !== undefined) draft.repeat = Number(v("f-rep")) || 0;
     if (v("f-extra") !== undefined) draft.extra_amount = v("f-extra");
+    { const o = $("#f-online"); if (o) draft.online = o.checked; }
     if (v("f-note") !== undefined) draft.note = v("f-note");
   }
   function addParticipant(c) {
     const pk = activePkg(c.id);
     draft.participants.push({ client_id: c.id, name: c.name, price: c.price || 0, pay: pk ? "package" : "paid", package_id: null });
+    if (draft.participants.length === 1 && !draft.id && c.online) draft.online = true;
     if (draft.kind === "personal" && draft.participants.length === 2) draft.kind = "split";
   }
 
@@ -441,7 +448,7 @@
       const pk = activePkg(c.id);
       return `<button class="crow" data-act="openClient" data-id="${c.id}">
         <span class="ava">${esc(initials(c.name))}</span>
-        <span><span class="nm">${esc(c.name)}</span><br><span class="ph">${esc(c.phone || "без телефону")}</span></span>
+        <span><span class="nm">${esc(c.name)}${c.online ? ' <span class="tag online">онлайн</span>' : ""}</span><br><span class="ph">${esc(c.phone || "без телефону")}${c.tg_linked ? ' · <span class="tg-ok">Telegram ✓</span>' : ""}</span></span>
         <span class="rt"><b>${c.price ? num(c.price) : "—"}</b>${Number(c.debt) ? `<span class="tag debt">борг ${num(c.debt)}</span>` : pk ? `<span class="tag ${pkgState(pk).free <= 2 ? "warn" : "pkg"}">${pkgState(pk).free <= 2 ? "⚠️ " : "абон. "}${pkgShort(pk)}</span>` : `<span>${c.visits || 0} трен.</span>`}</span>
       </button>`;
     };
@@ -449,6 +456,7 @@
       <header class="top"><div class="top-row"><h1 class="title">Клієнти</h1><span style="color:var(--muted);font-weight:600">${act.length}</span></div>
         <label class="search">${ICON.search}<input id="cq" type="search" placeholder="Імʼя або телефон" value="${esc(st.q)}" aria-label="Пошук клієнтів"></label>
       </header>
+      ${act.length ? `<button class="tg-sum" data-act="tgHelp">📨 Нагадування в Telegram: <b>${act.filter((c) => c.tg_linked).length} з ${act.length}</b> клієнтів · як підключити ›</button>` : ""}
       <div class="clients">${act.map(row).join("") || `<div class="empty"><b>${q ? "Нікого не знайдено" : "Поки що немає клієнтів"}</b>${q ? "Спробуйте інше імʼя або номер." : "Додайте першого клієнта кнопкою нижче."}</div>`}</div>
       ${arch.length ? `<div class="section-h">Архів</div><div class="clients">${arch.map(row).join("")}</div>` : ""}`, { fab: { act: "newClient", label: "Клієнт" } });
     const inp = $("#cq");
@@ -482,6 +490,7 @@
           <span class="plates" aria-label="Проведено ${pkgState(p).done}, заплановано ${pkgState(p).booked}, вільно ${pkgState(p).free} з ${p.sessions_total}">${Array.from({ length: p.sessions_total }, (_, i) => `<i class="${i < pkgState(p).done ? "u" : i < p.used ? "b" : ""}"></i>`).join("")}</span>
           <b>${pkgState(p).free}<small>вільно</small></b>
           <span class="pk-line">проведено ${pkgState(p).done} · заплановано ${pkgState(p).booked} · вільно ${pkgState(p).free}${p.expires_on ? ` · до ${dShort(p.expires_on)}` : ""}</span></button>`).join("") + '<div class="plates-legend"><span><i class="u"></i>проведено</span><span><i class="b"></i>заплановано</span><span><i></i>вільно</span></div>'  : '<div style="color:var(--muted);font-size:14px;margin-bottom:8px">Абонементів немає</div>'}
+        ${j.packages.some((p) => pkgState(p).free > 0) ? '<button class="btn blue wide" style="margin-top:8px" data-act="pkgUse">✓ Списати 1 тренування з абонемента</button>' : ""}
         <button class="btn light wide" style="margin-top:8px" data-act="newPackage">Продати абонемент</button>
       </div>
       <div class="card"><h3 class="row-h"><span>Програма тренувань</span><button class="chip-btn sm" data-act="editProgram" data-id="${c.id}">${prog.length ? "Змінити" : "Скласти"}</button></h3>
@@ -555,6 +564,7 @@
       </div>
       <label class="field"><span>Нотатки</span><textarea id="c-notes" rows="4" placeholder="Цілі, травми, обмеження, побажання">${esc(x.notes || "")}</textarea></label>
       <label class="toggle"><input type="checkbox" id="c-remind" ${x.remind !== false ? "checked" : ""}> Нагадувати в Telegram</label>
+      <label class="toggle"><input type="checkbox" id="c-online" ${x.online ? "checked" : ""}> Онлайн-клієнт <small>(нові тренування — онлайн, не йдуть у звіт залу)</small></label>
       <div class="foot"><button class="btn blue" data-act="saveClient" data-id="${c ? c.id : ""}">Зберегти</button></div>`, (bg) => { if (!c) $("#c-name", bg).focus(); });
   }
   let pkgReturn = null; // продаж абонемента просто з запису тренування
@@ -759,7 +769,7 @@
       syncDraft();
       const s = draft;
       const r = await must("session_save", {
-        session: { id: s.id, day: s.day, start_time: s.start_time, duration_min: s.duration_min, kind: s.kind, title: s.title, extra_amount: s.kind === "group" ? s.extra_amount : 0, note: s.note },
+        session: { id: s.id, day: s.day, start_time: s.start_time, duration_min: s.duration_min, kind: s.kind, title: s.title, extra_amount: s.kind === "group" ? s.extra_amount : 0, note: s.note, online: !!s.online },
         participants: s.participants.map((p) => ({ client_id: p.client_id, price: Number(p.price) || 0, pay: p.pay, package_id: p.pay === "package" ? p.package_id : null })),
         repeat_weeks: s.id ? 0 : s.repeat || 0,
       });
@@ -767,7 +777,7 @@
       for (const p of s.participants) {
         const c = clientById(p.client_id);
         if (c && !c.price && p.pay !== "package" && Number(p.price) > 0)
-          await call("client_save", { client: { id: c.id, name: c.name, phone: c.phone, price: Number(p.price), notes: c.notes, remind: c.remind } });
+          await call("client_save", { client: { id: c.id, name: c.name, phone: c.phone, price: Number(p.price), notes: c.notes, remind: c.remind, online: c.online } });
       }
       closeSheet(); toast(s.id ? "Збережено" : r.created > 1 ? `Записано ${r.created} тренувань щотижня${r.no_package ? ` · ${r.no_package} без абонемента (борг)` : ""}` : "Записано", !!r.no_package); st.date = s.day; await refreshBase(); render();
     },
@@ -812,7 +822,7 @@
     editClient(d) { clientSheet(clientById(+d.id)); },
     async saveClient(d) {
       const v = (id) => $("#" + id).value;
-      const j = await must("client_save", { client: { id: d.id ? +d.id : undefined, name: v("c-name"), phone: v("c-phone"), price: v("c-price"), notes: v("c-notes"), remind: $("#c-remind").checked } });
+      const j = await must("client_save", { client: { id: d.id ? +d.id : undefined, name: v("c-name"), phone: v("c-phone"), price: v("c-price"), notes: v("c-notes"), remind: $("#c-remind").checked, online: $("#c-online").checked } });
       closeSheet(); toast("Збережено"); await refreshBase(); st.clientId = j.client.id; render();
     },
     async archiveClient(d) {
@@ -963,6 +973,33 @@
     async toggleBackup(d, el) { await must("settings_save", { settings: { backup_weekly: el.checked } }); await refreshBase(); toast(el.checked ? "Щотижнева копія увімкнена" : "Щотижнева копія вимкнена"); },
     async payDebt(d) { await must("participant_pay", { id: +d.id, pay: "paid" }); toast("Борг закрито"); await refreshBase(); render(); },
     newPackage() { packageSheet(null, st.clientId); },
+    tgHelp() {
+      openSheet(`<h2>Нагадування клієнтам<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+        <p style="margin:-4px 0 10px">Telegram не дозволяє боту писати людині першим. Тому кожен клієнт <b>один раз</b> має сам відкрити бота й підтвердити номер — після цього нагадування приходять автоматично.</p>
+        <ol class="help">
+          <li>Відкрийте клієнта → «Нагадування в Telegram» → <b>«Отримати посилання для клієнта»</b>.</li>
+          <li>Надішліть посилання клієнту у Viber, Telegram чи SMS.</li>
+          <li>Клієнт відкриває посилання → <b>«Старт»</b> → <b>«Надіслати мій номер»</b>. Номер має збігатися з номером у журналі.</li>
+          <li>Готово: у списку клієнтів біля нього зʼявиться «Telegram ✓», а вам прийде повідомлення в бот.</li>
+        </ol>
+        <p class="hint">Нагадування надсилаються за стільки годин до тренування, скільки вказано в «Ще» → «Налаштування».</p>`);
+    },
+    // Швидко списати тренування: записує проведене тренування з оплатою «Абонемент»
+    pkgUse() {
+      const c = clientById(st.clientId), pk = activePkg(st.clientId); if (!c || !pk) return toast("Немає вільних тренувань в абонементі", true);
+      const now = new Date(), t = `${pad(now.getHours())}:${pad(Math.floor(now.getMinutes() / 5) * 5)}`;
+      openSheet(`<h2>Списати тренування<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+        <p style="margin:-4px 0 12px">${esc(c.name)} · ${esc(pkShortTitle(pk))} · ${pkgShort(pk)}</p>
+        <div class="row2"><label class="field"><span>Дата</span><input type="date" id="u-day" value="${today()}"></label><label class="field"><span>Час</span><input type="time" id="u-time" value="${t}" step="300"></label></div>
+        <label class="field"><span>Нотатка (необовʼязково)</span><input id="u-note" placeholder="Що робили"></label>
+        <div class="foot"><button class="btn blue" data-act="pkgUseOk">Списати 1 тренування</button></div>`);
+    },
+    async pkgUseOk() {
+      const c = clientById(st.clientId); if (!c) return;
+      await must("session_save", { session: { day: $("#u-day").value, start_time: $("#u-time").value || "12:00", duration_min: 60, kind: "personal", note: $("#u-note").value, online: !!c.online },
+        participants: [{ client_id: c.id, price: 0, pay: "package" }] });
+      closeSheet(); toast("Списано 1 тренування"); await refreshBase(); render();
+    },
     editPackage(d) { packageSheet(st.packages.find((p) => p.id === +d.id)); },
     async savePackage(d) {
       const v = (id) => $("#" + id).value;

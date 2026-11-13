@@ -203,7 +203,7 @@ async function geocode(name: string, region: string | null): Promise<Geo | null>
     if (geoBudget-- <= 0) return undefined as unknown as null;
     const q = ctx && region !== "sea" ? (region === "kyivcity" ? `${v}, Київ` : `${v}, ${ctx.name}`) : v;
     let res: any[] = [];
-    try { res = await geoSearch(q); } catch { return undefined as unknown as null; }
+    try { res = await geoSearch(q); } catch (e) { console.warn("geocode failed", q, String(e)); geoBudget = 0; return undefined as unknown as null; }
     if (geoDelay) await new Promise((r) => setTimeout(r, geoDelay)); // правила Nominatim: не частіше 1 запиту на секунду
     const hit = res.find((x) => GOOD.has(x.addresstype) || x.category === "place" || x.class === "place") ?? null;
     if (hit) {

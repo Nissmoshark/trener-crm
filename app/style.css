@@ -420,3 +420,7 @@ html, body { overflow-x: hidden; max-width: 100%; }
 button, .sess, .wday, .mcell, .crow { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 
 .mrow .tag, .hist .tag { flex: none; width: auto; display: inline-block; }
+
+/* Онлайн — жовтий */
+.sess.online .time { background: #f5c518; color: #2b2100; }
+.tag.online { background: #fdf0b8; color: #7a5b00; }

@@ -349,8 +349,9 @@
       <div class="kinds" role="group" aria-label="Тип">${Object.entries(KIND).map(([k, l]) => `<button data-act="kind" data-kind="${k}" aria-pressed="${s.kind === k}">${l}</button>`).join("")}</div>
       ${s.kind === "group" ? `<div class="row2">
         <label class="field"><span>Назва групи</span><input id="f-title" value="${esc(s.title || "")}" placeholder="Група"></label>
-        <label class="field"><span>Сума без імен, грн</span><input id="f-extra" type="number" inputmode="decimal" value="${Number(s.extra_amount) || ""}" placeholder="0"></label>
-      </div>` : ""}
+        <label class="field"><span>Сума за заняття, грн</span><input id="f-extra" type="number" inputmode="decimal" value="${Number(s.extra_amount) || ""}" placeholder="скільки заробили"></label>
+      </div><p class="hint" style="margin:-4px 0 10px">Сума щоразу своя — впишіть її після заняття. Клієнтів додавати не обовʼязково.</p>` : ""}
+      ${s.kind !== "group" && s.participants.length === 1 && isGroupName((clientById(s.participants[0].client_id) || s.participants[0]).name) ? '<button class="btn light wide" style="margin-bottom:12px" data-act="makeGroup">↔ Це групове заняття — вписувати суму щоразу</button>' : ""}
       <div class="parts">${s.participants.map((p, i) => partRow(p, i)).join("")}</div>
       ${(s.kind === "personal" && s.participants.length >= 1) ? '<button class="btn light wide" style="margin-bottom:12px" data-act="addMore">+ Додати ще клієнта (спліт)</button>' : pickerHtml()}
       <label class="toggle online-t"><input type="checkbox" id="f-online" ${s.online ? "checked" : ""}> Онлайн <small>— рахується у ваш дохід, але не йде у звіт адміністратору залу</small></label>
@@ -431,7 +432,14 @@
     { const o = $("#f-online"); if (o) draft.online = o.checked; }
     if (v("f-note") !== undefined) draft.note = v("f-note");
   }
+  const isGroupName = (n) => /^\s*груп/i.test(n || "");
+  // «Клієнт» з назвою «Група» — насправді групове заняття: сума щоразу своя, без імен
+  function toGroup(c) {
+    draft.kind = "group"; draft.title = c.name; draft.extra_amount = Number(draft.extra_amount) || 0;
+    draft.participants = draft.participants.filter((p) => p.client_id !== c.id);
+  }
   function addParticipant(c) {
+    if (isGroupName(c.name) && !draft.participants.length) { toGroup(c); return; }
     const pk = activePkg(c.id);
     draft.participants.push({ client_id: c.id, name: c.name, price: c.price || 0, pay: pk ? "package" : "paid", package_id: null });
     if (draft.participants.length === 1 && !draft.id && c.online) draft.online = true;
@@ -585,6 +593,7 @@
         <label class="field"><span>Діє до (необовʼязково)</span><input id="p-exp" type="date" value="${x.expires_on || ""}"></label>
       </div>
       <label class="field"><span>Назва (необовʼязково)</span><input id="p-title" value="${esc(x.title || "")}" placeholder="Місячний"></label>
+      <label class="field"><span>Уже відходив до журналу, тренувань</span><input id="p-before" type="number" inputmode="numeric" min="0" value="${x.used_before || ""}" placeholder="0"><small class="hint">Для абонементів, куплених раніше: скільки тренувань уже було, але не записано в журнал.</small></label>
       <label class="toggle"><input type="checkbox" id="p-paid" ${x.paid ? "checked" : ""}> Оплачено</label>
       <div class="foot">${ret ? '<button class="btn light" data-act="pkgBack">Назад</button>' : ""}<button class="btn blue" data-act="savePackage" data-id="${p ? p.id : ""}" data-client="${x.client_id}">${ret ? "Оформити й списати" : "Зберегти"}</button>${p ? '<button class="btn red" data-act="deletePackage" data-id="' + p.id + '">Видалити</button>' : ""}</div>`);
   }
@@ -748,6 +757,7 @@
       const s = j.sessions.find((x) => x.id === +d.id); if (s) sessionSheet(s);
     },
     kind(d) { syncDraft(); draft.kind = d.kind; drawSessionSheet(); },
+    makeGroup() { syncDraft(); const p = draft.participants[0]; const c = clientById(p.client_id) || { id: p.client_id, name: p.name }; draft.extra_amount = Number(p.price) || 0; toGroup(c); drawSessionSheet(); setTimeout(() => $("#f-extra")?.focus(), 50); },
     addMore() { syncDraft(); draft.kind = "split"; drawSessionSheet(); const q = $("#pick-q"); if (q) q.focus(); },
     addPart(d) { syncDraft(); const c = clientById(+d.id); if (c) addParticipant(c); drawSessionSheet(); },
     async quickClient(d) {
@@ -1003,7 +1013,7 @@
     editPackage(d) { packageSheet(st.packages.find((p) => p.id === +d.id)); },
     async savePackage(d) {
       const v = (id) => $("#" + id).value;
-      const r = await must("package_save", { package: { id: d.id ? +d.id : undefined, client_id: +d.client, sessions_total: v("p-n"), price: v("p-price"), bought_on: v("p-bought"), expires_on: v("p-exp"), title: v("p-title"), paid: $("#p-paid").checked } });
+      const r = await must("package_save", { package: { id: d.id ? +d.id : undefined, client_id: +d.client, sessions_total: v("p-n"), price: v("p-price"), bought_on: v("p-bought"), expires_on: v("p-exp"), title: v("p-title"), paid: $("#p-paid").checked, used_before: Number(v("p-before")) || 0 } });
       const ret = pkgReturn; pkgReturn = null;
       await refreshBase();
       if (!ret && r.eligible > 0) {

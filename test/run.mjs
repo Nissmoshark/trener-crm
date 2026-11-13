@@ -426,6 +426,24 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
     // прибрати тестові дані, щоб не зсувати лічильники адмінки нижче
     await st3.remove("tenants", ten.id);
     for (const c of await st3.list("clients")) if (c.name === "Онлайн Оля") await st3.remove("clients", c.id); }
+  // старий Telegram першого тренера в загальних налаштуваннях не «успадковується» іншими кабінетами
+  { const T3 = (await OK("setup", { name: "Новенький", phone: "0507778899", password: "Trener2026" })).token;
+    try { await st3.create("kv", { value: "100" }, "trainer_chat_id"); } catch { await st3.update("kv", "trainer_chat_id", { value: "100" }); }
+    try { await st3.remove("kv", "legacy_cleaned"); } catch { /* */ }
+    const bs3 = (await OK("bootstrap", {}, T3)).settings;
+    assert.equal(bs3.tg_linked, false, "новий кабінет не бачить чужий Telegram");
+    clk += 16000; out3.length = 0; await c3.tick();
+    assert.ok(!out3.some((x) => x.chat_id === 100 && /Тренувань немає|Тренувань: 0/.test(x.text || "")), "порожній кабінет не шле в чужий чат");
+    assert.equal((await st3.get("kv", "trainer_chat_id")).value, "", "залишок прибрано");
+    const ten3 = (await st3.list("tenants")).find((x) => x.phone && x.phone.endsWith("507778899")); if (ten3) await st3.remove("tenants", ten3.id); }
+  // абонемент: «уже відходив до журналу»
+  { const cb = (await OK("client_save", { client: { name: "Старий абонемент", price: 300 } }, T)).client;
+    const pk = (await OK("package_save", { package: { client_id: cb.id, sessions_total: 10, price: 3000, bought_on: "2026-10-01", used_before: 4 } }, T)).package;
+    const h = await OK("client_history", { id: cb.id }, T);
+    assert.equal(h.packages[0].used, 4); assert.equal(h.packages[0].used_done, 4);
+    await OK("package_save", { package: { id: pk.id, client_id: cb.id, sessions_total: 10, price: 3000, bought_on: "2026-10-01", used_before: 99 } }, T);
+    assert.equal((await OK("client_history", { id: cb.id }, T)).packages[0].used, 10, "не більше, ніж у абонементі");
+    for (const c of await st3.list("clients")) if (c.name === "Старий абонемент") await st3.remove("clients", c.id); }
   // щонеділі автоматично
   clk = Date.parse("2026-11-15T19:40:00Z"); // нд 21:40
   t = await c3.tick(); assert.ok(t.includes("backup"), "weekly backup " + t);

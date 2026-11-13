@@ -55,6 +55,11 @@ export function createCore(st, opts = {}) {
       sAt = Date.now();
       for (const k of ["secret", "token_secret"]) if (!S[k]) { S[k] = randCode(24); await kvSet(k, S[k]); }
       if (S.mt_migrated !== "1") await migrateToTenants();
+      // прибрати залишки однотренерської версії з загальних налаштувань (один раз)
+      if (S.mt_migrated === "1" && S.legacy_cleaned !== "1") {
+        for (const k of TENANT_KEYS) if (S[k]) { await kvSet(k, ""); S[k] = ""; }
+        await kvSet("legacy_cleaned", "1"); S.legacy_cleaned = "1";
+      }
       // перший тренер (ініціатор) — безстроковий доступ, один раз
       if (S.t1_lifetime !== "1") { const T1 = await loadTenant("t1"); if (T1) { T1.data.lifetime = "1"; await saveTenant(T1); } await kvSet("t1_lifetime", "1"); }
     }
@@ -93,11 +98,17 @@ export function createCore(st, opts = {}) {
     await st.update("tenants", T.id, { data: JSON.stringify(d), phone: d.trainer_phone || null, chat: d.trainer_chat_id || null, tg_phone: d.trainer_tg_phone || null });
   }
   // Налаштування поточного кабінету разом із глобальними (бот, секрети)
+  // Ключі, що належать лише кабінету тренера (у загальних налаштуваннях їх не беремо — інакше
+  // кабінет без власного Telegram «успадкував» би чат першого тренера й слав йому дублі)
+  const TENANT_KEYS = ["remind_before_min", "digest_morning", "digest_evening", "trainer_name", "trainer_phone", "trainer_tg_phone", "pass_salt", "pass_hash", "pass_ver",
+    "trainer_chat_id", "gym_address", "month_goal", "backup_weekly", "last_backup", "last_backup_day", "last_morning", "last_evening", "warned",
+    "report_time", "report_chats", "last_report", "paid_until", "trial_until", "plan", "lifetime", "blocked", "paid_claim", "paid_claim_at"];
   async function TS(force = false) {
     const c = cur();
     if (force) { const fresh = await loadTenant(c.T.id); if (fresh) c.T.data = fresh.data; }
-    const g = await settings(force);
-    return { ...g, ...c.T.data, tid: c.T.id };
+    const g = { ...(await settings(force)) };
+    for (const k of TENANT_KEYS) delete g[k];
+    return { ...TENANT_DEFAULTS, ...g, ...c.T.data, tid: c.T.id };
   }
   async function tSet(k, v) { const c = cur(); c.T.data[k] = v == null ? "" : String(v); await saveTenant(c.T); }
   async function tSetMany(obj) { const c = cur(); for (const [k, v] of Object.entries(obj)) c.T.data[k] = v == null ? "" : String(v); await saveTenant(c.T); }
@@ -264,7 +275,8 @@ export function createCore(st, opts = {}) {
     const today = local().day;
     return pkgs.map((p) => {
       const mine = parts.filter((x) => x.package_id === p.id && x.status !== "cancelled" && x.session_id !== excludeSession);
-      return { ...p, used: mine.length, used_done: mine.filter((x) => x.day <= today).length };
+      const before = Math.max(0, Number(p.used_before) || 0); // відходив до журналу
+      return { ...p, used: mine.length + before, used_done: mine.filter((x) => x.day <= today).length + before };
     })
       .sort((a, b) => (b.bought_on || "").localeCompare(a.bought_on || "") || b.id - a.id);
   }
@@ -638,6 +650,7 @@ export function createCore(st, opts = {}) {
         client_id: Number(p.client_id), title: p.title ? String(p.title).slice(0, 200) : null, sessions_total: Math.round(Number(p.sessions_total)),
         price: Number(p.price) || 0, paid: p.paid !== false, bought_on: isDay(p.bought_on) ? p.bought_on : local().day, expires_on: isDay(p.expires_on) ? p.expires_on : null,
       };
+      if (p.used_before !== undefined) vals.used_before = Math.max(0, Math.min(vals.sessions_total, Math.round(Number(p.used_before) || 0)));
       if (p.id) {
         const row = await D.update("packages", p.id, vals);
         const unit = round2(vals.price / vals.sessions_total);
@@ -651,7 +664,7 @@ export function createCore(st, opts = {}) {
     async package_attach(b) {
       const pk = await D.get("packages", b.id);
       if (!pk) throw new ApiError("Абонемент не знайдено");
-      const used = (await partsFor([["package_id", "eq", pk.id]])).filter((x) => x.status !== "cancelled").length;
+      const used = (await partsFor([["package_id", "eq", pk.id]])).filter((x) => x.status !== "cancelled").length + (Number(pk.used_before) || 0);
       let free = pk.sessions_total - used, n = 0;
       const unit = round2(Number(pk.price) / pk.sessions_total);
       for (const x of await eligibleForPkg(pk)) {

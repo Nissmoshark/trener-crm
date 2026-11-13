@@ -13,7 +13,7 @@ export const SCHEMA = {
   },
   packages: {
     attrs: [["tid", "string", 32], ["client_id", "string", 32], ["title", "string", 200], ["sessions_total", "integer"], ["price", "float"],
-      ["paid", "boolean", null, true], ["bought_on", "string", 10], ["expires_on", "string", 10]],
+      ["paid", "boolean", null, true], ["bought_on", "string", 10], ["expires_on", "string", 10], ["used_before", "integer"]],
     indexes: [["tid"], ["client_id"]],
   },
   sessions: {

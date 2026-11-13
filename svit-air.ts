@@ -58,12 +58,19 @@ export function findRegion(t: string): string | null {
   // найраніша згадка в тексті — область, де ціль зараз
   let best: [number, string] | null = null;
   for (const k of OBL_ORDER) {
-    const m = OBL[k].re.exec(t);
-    if (m && (!best || m.index < best[0])) best = [m.index + (m[1]?.length ?? 0), k];
+    const re = new RegExp(OBL[k].re.source, "gi");
+    for (const m of t.matchAll(re)) {
+      const at = (m.index ?? 0) + (m[1]?.length ?? 0);
+      // «курс на Київщину» — це куди летить, а не де зараз
+      if (/курс(?:ом)?\s+на\s*$|напрямку\s*$/i.test(t.slice(Math.max(0, at - 16), at))) continue;
+      if (!best || at < best[0]) best = [at, k];
+      break;
+    }
   }
   return best?.[1] ?? null;
 }
-const isRegionWord = (w: string) => OBL_ORDER.some((k) => k !== "kyivcity" && OBL[k].re.test(w));
+const isRegionWord = (w: string) => OBL_ORDER.some((k) => k !== "kyivcity" && (OBL[k].re.test(w) || OBL[k].re.test(w + " обл")));
+const regionOfWord = (w: string) => OBL_ORDER.find((k) => k !== "kyivcity" && (OBL[k].re.test(w) || OBL[k].re.test(w + " обл"))) ?? null;
 
 // ───────────── Розбір повідомлень ─────────────
 export type Kind = "drone" | "jet" | "missile" | "kab" | "ballistic";
@@ -76,7 +83,7 @@ type Parsed = { kind: Kind; region: string | null; part: [number, number] | null
 const KIND_TTL: Record<Kind, number> = { drone: 45, jet: 30, missile: 15, kab: 12, ballistic: 6 };
 export function kindOf(t: string, prev: Kind | null): Kind | null {
   if (/балістик|іскандер|кинджал|циркон/i.test(t)) return "ballistic";
-  if (/\bКАБ|керован\S* авіабомб/i.test(t)) return "kab";
+  if (/(^|[^а-яіїєґ])КАБ|керован\S* авіабомб/i.test(t)) return "kab";
   if (/реактивн/i.test(t) || t.includes("🏍")) return "jet";
   if (/крилат|ракет|калібр|х-?\d{2}/i.test(t) || t.includes("🚀")) return "missile";
   if (/бпла|шахед|дрон|безпілот|ударн|🛵/i.test(t)) return "drone";
@@ -116,7 +123,7 @@ export function parseLine(raw: string, prevKind: Kind | null, ctxRegion: string 
   const cand = mCourse?.[1] ?? mOn?.[1] ?? null;
   if (cand) {
     if (isRegionWord(cand)) {
-      destRegion = findRegion(cand);
+      destRegion = regionOfWord(cand);
       const inner = /\(([^)]+)\)/.exec(cand); // «на Житомирщину(Черняхів)»
       if (inner) dest = cleanPlace(inner[1]);
     } else dest = cleanPlace(cand);
@@ -257,6 +264,7 @@ export async function buildTargets(msgs: Msg[], now = nowMs()) {
           if (heading == null) heading = bearing(pos, destPos);
         } else pos = destPos;
       } else if (pos && destPos && heading == null) heading = bearing(pos, destPos);
+      else if (pos && !destPos && p.destRegion && p.destRegion !== p.region && heading == null && OBL[p.destRegion]) heading = bearing(pos, OBL[p.destRegion]);
       if (!pos && origin) { pos = origin; if (heading == null && p.destRegion && p.destRegion !== p.region && OBL[p.destRegion]) heading = bearing(origin, OBL[p.destRegion]); }
       if (!pos && p.destRegion) { const r = OBL[p.destRegion]; pos = { lat: r.lat, lon: r.lon }; }
       if (!pos) continue;

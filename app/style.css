@@ -424,3 +424,5 @@ button, .sess, .wday, .mcell, .crow { -webkit-touch-callout: none; -webkit-user-
 /* Онлайн — жовтий */
 .sess.online .time { background: #f5c518; color: #2b2100; }
 .tag.online { background: #fdf0b8; color: #7a5b00; }
+
+.crow .rt .tag { white-space: nowrap; }

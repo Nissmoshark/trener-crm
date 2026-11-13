@@ -457,7 +457,7 @@
       return `<button class="crow" data-act="openClient" data-id="${c.id}">
         <span class="ava">${esc(initials(c.name))}</span>
         <span><span class="nm">${esc(c.name)}${c.online ? ' <span class="tag online">онлайн</span>' : ""}</span><br><span class="ph">${esc(c.phone || "без телефону")}${c.tg_linked ? ' · <span class="tg-ok">Telegram ✓</span>' : ""}</span></span>
-        <span class="rt"><b>${c.price ? num(c.price) : "—"}</b>${Number(c.debt) ? `<span class="tag debt">борг ${num(c.debt)}</span>` : pk ? `<span class="tag ${pkgState(pk).free <= 2 ? "warn" : "pkg"}">${pkgState(pk).free <= 2 ? "⚠️ " : "абон. "}${pkgShort(pk)}</span>` : `<span>${c.visits || 0} трен.</span>`}</span>
+        <span class="rt"><b>${c.price ? num(c.price) : "—"}</b>${Number(c.debt) ? `<span class="tag debt">борг ${num(c.debt)}</span>` : pk ? `<span class="tag ${pkgState(pk).free <= 2 ? "warn" : "pkg"}" title="Абонемент: вільно ${pkgState(pk).free} з ${pkgState(pk).total}">${pkgState(pk).free <= 2 ? "⚠️ " : "А "}${pkgState(pk).free}/${pkgState(pk).total}</span>` : `<span>${c.visits || 0} трен.</span>`}</span>
       </button>`;
     };
     shell(`

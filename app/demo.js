@@ -64,7 +64,7 @@
 
   const load = () => { try { const j = localStorage.getItem(KEY); if (j) return JSON.parse(j); } catch {} return seed(); };
   let db = load();
-  db.plans ||= []; db.expenses ||= []; db.measures ||= [];
+  db.plans ||= []; db.expenses ||= []; db.measures ||= []; db.notes ||= [];
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(db)); } catch {} };
   const nid = () => db.seq++;
   const fail = (m) => { throw Object.assign(new Error(m), { api: true }); };
@@ -114,6 +114,14 @@
       if (weeks) { row.series = String(row.id); for (let w = 1; w <= weeks; w++) db.plans.push({ ...row, id: nid(), day: addDays(row.day, 7 * w) }); }
       return { plan: row, created: weeks + 1 };
     },
+    notes_list: () => ({ notes: [...db.notes].sort((a, c) => (c.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || String(c.updated || "").localeCompare(String(a.updated || ""))) }),
+    note_save(b) {
+      const n = b.note || {}; const title = String(n.title || "").trim(), body = String(n.body || "").trim(); if (!title && !body) fail("Напишіть текст нотатки");
+      const vals = { title: title || null, body: body || null, pinned: !!n.pinned, updated: new Date().toISOString() };
+      if (n.id) { const row = db.notes.find((x) => x.id === n.id); Object.assign(row, vals); return { note: row }; }
+      const row = { id: nid(), ...vals }; db.notes.push(row); return { note: row };
+    },
+    note_delete(b) { db.notes = db.notes.filter((x) => x.id !== b.id); return {}; },
     plan_done(b) { const p = db.plans.find((x) => x.id === b.id); if (p) p.done = !!b.done; return {}; },
     plan_delete(b) {
       const p0 = db.plans.find((p) => p.id === b.id); if (!p0) return {};

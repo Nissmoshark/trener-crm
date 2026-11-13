@@ -4,7 +4,7 @@
 //   tick()             — щохвилини: нагадування, ранковий план і вечірній підсумок
 import { AsyncLocalStorage } from "node:async_hooks";
 const TZ = "Europe/Kyiv";
-const DATA_TABLES = ["clients", "packages", "sessions", "parts", "moves", "plans", "expenses", "measures"];
+const DATA_TABLES = ["clients", "packages", "sessions", "parts", "moves", "plans", "expenses", "measures", "notes"];
 // Службові ключі kv, які не є глобальними налаштуваннями
 const KV_PRIVATE = ["f_", "p_", "tc_", "rs_", "ac_", "rc_"];
 const isPriv = (k) => KV_PRIVATE.some((x) => String(k).startsWith(x));
@@ -373,7 +373,7 @@ export function createCore(st, opts = {}) {
     return arr.length ? j : null;
   }
   async function backupData() {
-    const names = ["clients", "packages", "sessions", "parts", "moves", "plans", "expenses", "measures"];
+    const names = DATA_TABLES;
     const data = Object.fromEntries(await Promise.all(names.map(async (n) => [n, await all(n)])));
     for (const c of data.clients) delete c.tg_code;
     return { app: "trener-crm", at: new Date(nowMs()).toISOString(), ...data };
@@ -483,6 +483,22 @@ export function createCore(st, opts = {}) {
       for (let w = 1; w <= weeks; w++) await D.create("plans", { ...vals, day: addDays(vals.day, 7 * w), reminded: false, done: false, series }, newId());
       return { plan, created: weeks + 1 };
     },
+    // ── Особисті нотатки (вільний текст, не привʼязаний до клієнта чи дати) ──
+    async notes_list() {
+      return { notes: (await all("notes")).sort((a, c) => (c.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || String(c.updated || "").localeCompare(String(a.updated || ""))) };
+    },
+    async note_save(b) {
+      const n = b.note ?? {};
+      const title = String(n.title ?? "").trim().slice(0, 200), body = String(n.body ?? "").trim().slice(0, 5000);
+      if (!title && !body) throw new ApiError("Напишіть текст нотатки");
+      const vals = { title: title || null, body: body || null, pinned: !!n.pinned, updated: new Date(nowMs()).toISOString() };
+      if (n.id) {
+        if (!(await D.get("notes", n.id))) throw new ApiError("Нотатку не знайдено");
+        return { note: await D.update("notes", n.id, vals) };
+      }
+      return { note: await D.create("notes", vals, newId()) };
+    },
+    async note_delete(b) { await D.remove("notes", b.id); return {}; },
     async plan_done(b) { await D.update("plans", b.id, { done: !!b.done }); return {}; },
     async plan_delete(b) {
       const p = await D.get("plans", b.id);
@@ -1061,7 +1077,7 @@ export function createCore(st, opts = {}) {
 
   // Дії, дозволені, коли підписка закінчилась (лише перегляд і обслуговування)
   const PRO_ONLY = new Set(["tg_link_client", "backup_now", "report_link", "report_send_now"]);
-  const READ_OK = new Set(["bootstrap", "range", "plans_range", "client_history", "expenses_range", "export", "backup_now", "settings_save", "credentials_save",
+  const READ_OK = new Set(["bootstrap", "range", "plans_range", "notes_list", "client_history", "expenses_range", "export", "backup_now", "settings_save", "credentials_save",
     "tg_link_trainer", "tg_unlink_trainer", "sub_paid", "bot_connect", "report_unlink"]);
   async function api(body, headers, ctx = {}) {
     const action = String(body?.action ?? "");

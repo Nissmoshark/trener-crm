@@ -73,7 +73,7 @@
   }
 
   // ───── Стан ─────
-  const st = { planDate: today(), tab: "schedule", mode: "day", date: today(), clients: [], packages: [], settings: {}, q: "", statsPeriod: "month", statsDate: today(), clientId: null };
+  const st = { planView: "plans", planDate: today(), tab: "schedule", mode: "day", date: today(), clients: [], packages: [], settings: {}, q: "", statsPeriod: "month", statsDate: today(), clientId: null };
   const clientById = (id) => st.clients.find((c) => c.id === id);
   const sessTotal = (s) => (s.status === "cancelled" ? 0 : s.participants.reduce((a, p) => a + Number(p.price), 0) + Number(s.extra_amount || 0));
   const sessWho = (s) => s.kind === "group"
@@ -263,10 +263,29 @@
     if (!ps.length) return "";
     return `<div class="card plans-mini"><h3>Мої плани</h3>${ps.map((p) => `<button class="pm ${p.done ? "done" : ""}" data-act="editPlan" data-id="${p.id}"><b>${p.time || "день"}</b><span>${(CATS[p.cat] || CATS.personal)[1]} ${esc(p.title)}</span></button>`).join("")}</div>`;
   }
+  const planSeg = () => `<div class="seg" role="group" aria-label="Розділ">${[["plans", "Плани"], ["notes", "Нотатки"]].map(([k, l]) => `<button data-act="planView" data-v="${k}" aria-pressed="${st.planView === k}">${l}</button>`).join("")}</div>`;
+  async function renderNotes() {
+    shell(`<header class="top"><div class="top-row"><h1 class="title">Плани</h1></div>${planSeg()}</header><div id="pbox"><div class="loading">Завантаження…</div></div>`, { fab: { act: "newNote", label: "Нотатка" } });
+    const j = await must("notes_list", {});
+    const box = $("#pbox"); if (!box) return;
+    st.notes = j.notes || [];
+    box.innerHTML = st.notes.length ? `<div class="notes">${st.notes.map((n) => `<button class="note ${n.pinned ? "pin" : ""}" data-act="editNote" data-id="${n.id}"><span class="nt">${n.pinned ? "📌 " : ""}${esc(n.title || (n.body || "").split("\n")[0].slice(0, 60))}</span>${n.title && n.body ? `<span class="nb">${esc(n.body)}</span>` : (!n.title && n.body && n.body.includes("\n") ? `<span class="nb">${esc(n.body.split("\n").slice(1).join("\n"))}</span>` : "")}</button>`).join("")}</div>`
+      : '<div class="card"><div class="none">Тут ваші особисті нотатки: ідеї вправ, що купити, думки по тренуваннях. Натисніть «+ Нотатка».</div></div>';
+  }
+  function noteSheet(n) {
+    const x = n || { title: "", body: "", pinned: false };
+    openSheet(`<h2>${n ? "Нотатка" : "Нова нотатка"}<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+      <label class="field"><span>Заголовок (необовʼязково)</span><input id="nt-title" value="${esc(x.title || "")}" maxlength="200"></label>
+      <label class="field"><span>Текст</span><textarea id="nt-body" rows="8" maxlength="5000">${esc(x.body || "")}</textarea></label>
+      <label class="chk-row"><input type="checkbox" id="nt-pin" ${x.pinned ? "checked" : ""}> <span>📌 Закріпити вгорі</span></label>
+      <div class="foot"><button class="btn blue" data-act="saveNote" data-id="${n ? n.id : ""}">Зберегти</button>${n ? `<button class="btn red" data-act="deleteNote" data-id="${n.id}">Видалити</button>` : ""}</div>`, (bg) => { if (!n) $("#nt-body", bg).focus(); });
+  }
   async function renderPlans() {
+    if (st.planView === "notes") return renderNotes();
     const d = st.planDate, rel = d === today() ? "Сьогодні" : d === addDays(today(), 1) ? "Завтра" : d === addDays(today(), -1) ? "Вчора" : null;
     shell(`<header class="top">
         <div class="top-row"><h1 class="title">Плани</h1><button class="chip-btn" data-act="planToday">Сьогодні</button></div>
+        ${planSeg()}
         <div class="datebar">
           <button class="icon-btn" data-act="planShift" data-n="-1" aria-label="Попередній день">${ICON.left}</button>
           <div class="label">${rel ?? dLong(d)}<small>${rel ? dLong(d) + ", " : ""}${WDL[D(d).getDay()]}</small></div>
@@ -1037,7 +1056,8 @@
       if (st.sub && !st.sub.pro) { toast("Бот для клієнтів — у тарифі Pro", true); return handlers.subSheet(); }
       const j = await must("tg_link_client", { id: +d.id });
       const c = clientById(+d.id);
-      const text = `Привіт! Щоб отримувати нагадування про тренування, відкрийте посилання й підтвердіть свій номер: ${j.url}`;
+      const me = (st.settings && st.settings.trainer_name) || "";
+      const text = `Привіт${me ? `, це ${me}` : ""} 💪\nЩоб отримувати нагадування про тренування, відкрийте посилання й підтвердіть, будь ласка, свій номер 📲:\n${j.url}`;
       if (navigator.share) { navigator.share({ text }).catch(() => {}); return; }
       try { await navigator.clipboard.writeText(text); toast("Посилання скопійовано — надішліть його клієнту"); }
       catch { openSheet(`<h2>Посилання для ${esc(c ? c.name : "клієнта")}<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2><label class="field"><span>Скопіюйте й надішліть клієнту</span><textarea id="link-text" rows="3" readonly>${esc(text)}</textarea></label>`, (bg) => $("#link-text", bg).select()); }
@@ -1046,6 +1066,15 @@
     planToday() { st.planDate = today(); render(); },
     planShift(d) { st.planDate = addDays(st.planDate, +d.n); render(); },
     newPlan() { planSheet(null); },
+    planView(d) { st.planView = d.v; render(); },
+    newNote() { noteSheet(null); },
+    editNote(d) { const n = (st.notes || []).find((x) => x.id === +d.id || String(x.id) === d.id); if (n) noteSheet(n); },
+    async saveNote(d) {
+      const v = (id) => ($("#" + id) || {}).value || "";
+      await must("note_save", { note: { id: d.id ? (/^\d+$/.test(d.id) ? +d.id : d.id) : undefined, title: v("nt-title"), body: v("nt-body"), pinned: !!($("#nt-pin") || {}).checked } });
+      closeSheet(); toast("Збережено"); render();
+    },
+    deleteNote(d) { askConfirm("Видалити нотатку?", "Видалити", async () => { await must("note_delete", { id: /^\d+$/.test(d.id) ? +d.id : d.id }); closeSheet(); toast("Видалено"); render(); }); },
     async editPlan(d) {
       let p = (st.plans || []).find((x) => x.id === +d.id);
       if (!p) { const j = await must("plans_range", { from: addDays(st.date, -1), to: addDays(st.date, 8) }); p = j.plans.find((x) => x.id === +d.id); }

@@ -32,6 +32,10 @@ export const SCHEMA = {
       ["series", "string", 32]],
     indexes: [["tid"], ["day"], ["series"]],
   },
+  notes: {
+    attrs: [["tid", "string", 32], ["title", "string", 200], ["body", "string", 5000], ["pinned", "boolean", null, false], ["updated", "string", 32]],
+    indexes: [["tid"]],
+  },
   expenses: {
     attrs: [["tid", "string", 32], ["day", "string", 10], ["amount", "float"], ["cat", "string", 16], ["note", "string", 300]],
     indexes: [["tid"], ["day"]],

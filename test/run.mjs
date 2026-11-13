@@ -235,6 +235,17 @@ assert.ok(sent.some((x) => /Особисті плани[\s\S]*Перукар/.te
 await ok("plan_save", { plan: { id: pl.id, day: L0.day, time: "10:15", title: "Перукар", remind_min: 120 } }, tok);
 assert.equal((await ok("plans_range", { from: L0.day, to: L0.day }, tok)).plans.find((x) => x.id === pl.id).reminded, false);
 await ok("plan_delete", { id: pl.id }, tok);
+// нотатки
+await bad("note_save", { note: { title: " ", body: "" } }, tok, /Напишіть/);
+const n1 = (await ok("note_save", { note: { title: "Ідеї", body: "Нова програма для спини" } }, tok)).note;
+const n2 = (await ok("note_save", { note: { body: "Купити килимок", pinned: true } }, tok)).note;
+let nl = (await ok("notes_list", {}, tok)).notes;
+assert.equal(nl.length, 2); assert.equal(nl[0].id, n2.id, "закріплена зверху");
+await ok("note_save", { note: { id: n1.id, title: "Ідеї 2", body: "x" } }, tok);
+assert.equal((await ok("notes_list", {}, tok)).notes.find((x) => x.id === n1.id).title, "Ідеї 2");
+await ok("note_delete", { id: n1.id }, tok); await ok("note_delete", { id: n2.id }, tok);
+assert.equal((await ok("notes_list", {}, tok)).notes.length, 0);
+
 assert.equal((await ok("plans_range", { from: L0.day, to: L0.day }, tok)).plans.length, 1);
 t = await core.tick();
 assert.ok(!t.some((x) => x.startsWith("remind")), "no double remind");

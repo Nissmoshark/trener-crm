@@ -426,3 +426,9 @@ button, .sess, .wday, .mcell, .crow { -webkit-touch-callout: none; -webkit-user-
 .tag.online { background: #fdf0b8; color: #7a5b00; }
 
 .crow .rt .tag { white-space: nowrap; }
+.notes { display: grid; gap: 8px; margin: 0 16px 12px; }
+.note { display: block; width: 100%; text-align: left; border: 1px solid var(--line); background: var(--paper); border-radius: 14px; padding: 12px 14px; font: inherit; color: inherit; }
+.note.pin { background: #fffbe6; border-color: #f0e2a0; }
+.note .nt { display: block; font-weight: 600; }
+.note .nb { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-top: 4px; color: var(--muted); font-size: 14px; white-space: pre-line; }
+.chk-row { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; font-size: 15px; }

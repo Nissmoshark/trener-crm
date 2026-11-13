@@ -1056,7 +1056,7 @@ const publicSettings = (s: Record<string, string>) => ({
   tg_linked: !!s.chat_id, bot_username: s.bot_username || "", last_error: s.last_error || "", last_ok: Number(s.last_ok || 0),
 });
 
-const ADMIN_ONLY = new Set(["settings_save", "dess_connect", "points", "tg_link", "invite_create", "invite_delete", "member_reset", "member_remove"]);
+const ADMIN_ONLY = new Set(["inv_fields", "inv_set", "settings_save", "dess_connect", "points", "tg_link", "invite_create", "invite_delete", "member_reset", "member_remove"]);
 // Поки член сімʼї не задав номер і пароль, доступні лише ці дії
 const NO_PASS_OK = new Set(["dashboard", "credentials_save"]);
 const actions: Record<string, (b: Body, me: Member) => Promise<unknown>> = {
@@ -1120,6 +1120,20 @@ const actions: Record<string, (b: Body, me: Member) => Promise<unknown>> = {
       await alertsTick();
     }
     return { settings: publicSettings(await settings(true)) };
+  },
+  // Налаштування інвертора через хмару SmartESS (лише перегляд — розвідка)
+  async inv_fields() {
+    await settings(true);
+    const dev = { pn: S.dess_pn, devcode: S.dess_devcode, devaddr: S.dess_devaddr, sn: S.dess_sn, i18n: "en" };
+    const fields = await dessAuthed(() => dessCall("queryDeviceCtrlField", dev));
+    const list = (fields?.field ?? fields ?? []) as any[];
+    const out: any[] = [];
+    for (const f of list) {
+      let val: unknown = null;
+      try { val = await dessAuthed(() => dessCall("queryDeviceCtrlValue", { ...dev, id: f.id })); } catch (e) { val = { error: String(e) }; }
+      out.push({ ...f, current: val });
+    }
+    return { fields: out };
   },
   async dess_connect(b) {
     const user = String(b.user ?? "").trim(), pass = String(b.pass ?? "");

@@ -21,6 +21,7 @@ export const sql = postgres(env("SUPABASE_DB_URL"), {
 
 // ───────────── Налаштування ─────────────
 let S: Record<string, string> = {};
+export const _setS = (o: Record<string, string>) => { S = o; };
 let sAt = 0;
 async function settings(force = false) {
   if (force || Date.now() - sAt > 15_000) {
@@ -204,6 +205,36 @@ function socDelta(from: number | null, to: number | null) {
   const kwh = S.batt_kwh ? ` (${d >= 0 ? "+" : "−"}${(Math.abs(d) / 100 * Number(S.batt_kwh)).toFixed(1).replace(".", ",")} кВт·год)` : "";
   return `${d >= 0 ? "+" : "−"}${Math.abs(d)}%${kwh}`;
 }
+// Графік ДТЕК (заповнює svit-dtek): коли дадуть світло / коли наступне відключення
+function schedIvs(): { a: number; b: number }[] {
+  try { return S.dtek_group ? JSON.parse(S.dtek_iv || "[]") : []; } catch { return []; }
+}
+function whenTxt(ms: number, from: number) {
+  const d = local(ms).day, t = local(from).day, tm = local(from + 86400000).day;
+  return `${local(ms).hm}${d === t ? "" : d === tm ? " завтра" : ` ${d.slice(8)}.${d.slice(5, 7)}`}`;
+}
+function emergencyNow(ts: number) {
+  try { const sc = JSON.parse(S.dtek_sched || "null"); return !!sc?.days?.some((d: any) => d.date === local(ts).day && d.status === "EmergencyShutdowns"); } catch { return false; }
+}
+function rangeTxt(a: number, b: number, from: number) {
+  const A = whenTxt(a, from), B = whenTxt(b, from), sa = A.slice(5), sb = B.slice(5);
+  return sa && sa === sb ? `${A.slice(0, 5)}–${B.slice(0, 5)}${sa}` : `${A}–${B}`;
+}
+// «Світла немає»: коли воно буде за графіком
+export function powerBackHint(ts = nowMs()) {
+  if (!S.dtek_group) return "";
+  if (emergencyNow(ts)) return "🚨 Екстрені відключення — коли дадуть світло, невідомо";
+  const iv = schedIvs().find((x) => x.a - 45 * 60000 <= ts && ts < x.b);
+  if (iv) return `⏳ За графіком світло буде о <b>${whenTxt(iv.b, ts)}</b> (через ${fmtDur((iv.b - ts) / 60000)})`;
+  const next = schedIvs().find((x) => x.a > ts);
+  return `⚠️ Відключення поза графіком (черга ${S.dtek_group}) — час увімкнення невідомий${next ? `\nНаступне за графіком: ${rangeTxt(next.a, next.b, ts)}` : ""}`;
+}
+// «Світло є»: наступне відключення за графіком
+export function nextOffHint(ts = nowMs()) {
+  if (!S.dtek_group) return "";
+  const next = schedIvs().find((x) => x.a > ts);
+  return next ? `📅 Наступне відключення: ${rangeTxt(next.a, next.b, ts)} (через ${fmtDur((next.a - ts) / 60000)})` : "📅 Відключень за графіком найближчим часом немає";
+}
 export async function recordReading(r: Reading, ts = nowMs()) {
   await settings();
   const [prev] = await sql`select * from energy.samples order by ts desc limit 1`;
@@ -240,6 +271,7 @@ export async function recordReading(r: Reading, ts = nowMs()) {
     const onMin = prevOut ? (ts - new Date(prevOut.ended_at).getTime()) / 60000 : null;
     const ch = prevOut ? socDelta(prevOut.soc_end, r.soc) : "";
     await notifyReplace("power", [`🕯 <b>Світла немає</b> з ${local(ts).hm}`,
+      powerBackHint(ts),
       onMin != null ? `До цього світло було ${fmtDur(onMin)}` : "",
       r.soc != null ? `🔋 АКБ ${Math.round(r.soc)}%${ch ? ` · за час зі світлом ${ch}` : ""}` : "",
       r.load_w != null ? `🏠 Навантаження ${Math.round(r.load_w)} Вт` : ""].filter(Boolean).join("\n"), ["low", "dtek_warn"]);
@@ -249,7 +281,7 @@ export async function recordReading(r: Reading, ts = nowMs()) {
     if (r.soc != null && r.soc <= lowSoc && !open.low_notified) {
       await sql`update energy.outages set low_notified=true where id=${open.id}`;
       const rate = r.load_w ? ` При навантаженні ${Math.round(r.load_w)} Вт.` : "";
-      await notifyReplace("low", `🪫 <b>АКБ ${Math.round(r.soc)}%</b>, світла немає вже ${fmtDur((ts - new Date(open.started_at).getTime()) / 60000)}.${rate}`);
+      await notifyReplace("low", `🪫 <b>АКБ ${Math.round(r.soc)}%</b>, світла немає вже ${fmtDur((ts - new Date(open.started_at).getTime()) / 60000)}.${rate}${powerBackHint(ts) ? "\n" + powerBackHint(ts) : ""}`);
       events.push("low");
     }
   } else if (r.grid_on && open) {
@@ -258,7 +290,8 @@ export async function recordReading(r: Reading, ts = nowMs()) {
     const ch = socDelta(open.soc_start, r.soc);
     const minSoc = open.soc_min != null && r.soc != null ? Math.round(Math.min(open.soc_min, r.soc)) : null;
     await notifyReplace("power", [`💡 <b>Світло є</b> з ${local(ts).hm}`, `Відключення тривало ${fmtDur(dur)}`,
-      r.soc != null ? `🔋 АКБ ${Math.round(r.soc)}%${ch ? ` · за відключення ${ch}` : ""}${minSoc != null && minSoc < Math.round(r.soc) ? ` · мінімум ${minSoc}%` : ""}` : ""].filter(Boolean).join("\n"), ["low", "dtek_warn"]);
+      r.soc != null ? `🔋 АКБ ${Math.round(r.soc)}%${ch ? ` · за відключення ${ch}` : ""}${minSoc != null && minSoc < Math.round(r.soc) ? ` · мінімум ${minSoc}%` : ""}` : "",
+      nextOffHint(ts)].filter(Boolean).join("\n"), ["low", "dtek_warn"]);
     events.push("on");
     await powerTasksFire(ts);
   }
@@ -1342,6 +1375,7 @@ async function statusText() {
   const L = [
     alertLine,
     open ? `🕯 <b>Світла немає</b> вже ${fmtDur((nowMs() - new Date(open.started_at).getTime()) / 60000)}` : "💡 <b>Світло є</b>",
+    open ? powerBackHint() : nextOffHint(),
     r.soc != null ? `🔋 АКБ: <b>${Math.round(r.soc)}%</b>${r.batt_in_w ? ` · заряд ${Math.round(r.batt_in_w)} Вт` : r.batt_out_w ? ` · розряд ${Math.round(r.batt_out_w)} Вт` : ""}` : "",
     r.load_w != null ? `🏠 Навантаження: ${Math.round(r.load_w)} Вт` : "",
     r.pv_w ? `☀️ Сонце: ${Math.round(r.pv_w)} Вт` : "",

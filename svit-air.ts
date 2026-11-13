@@ -163,12 +163,16 @@ export function parseChannel(html: string): Msg[] {
 }
 
 // ───────────── Геокодування ─────────────
+// Photon (komoot, дані OpenStreetMap) — Nominatim не пускає сервери Supabase (403)
 export let geoSearch = async (q: string): Promise<any[]> => {
-  const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=ua&accept-language=uk&limit=5&q=${encodeURIComponent(q)}`, {
+  const r = await fetch(`https://photon.komoot.io/api/?limit=6&bbox=22,44,40.3,52.5&q=${encodeURIComponent(q)}`, {
     headers: { "User-Agent": "svitlytsia-family-app/1.0 (air targets map)" }, signal: AbortSignal.timeout(8000),
   });
-  if (!r.ok) throw new Error("nominatim " + r.status);
-  return await r.json();
+  if (!r.ok) throw new Error("photon " + r.status);
+  const j = await r.json();
+  return (j.features ?? []).filter((f: any) => !f.properties?.countrycode || f.properties.countrycode === "UA").map((f: any) => ({
+    lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0], addresstype: f.properties.osm_value ?? f.properties.type, class: f.properties.osm_key, name: f.properties.name,
+  }));
 };
 export function setGeoSearch(f: (q: string) => Promise<any[]>) { geoSearch = f; }
 // Знахідний відмінок → називний: «на Балаклію» → Балаклія, «на Христинівку» → Христинівка

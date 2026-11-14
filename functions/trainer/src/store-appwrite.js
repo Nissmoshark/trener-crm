@@ -37,7 +37,7 @@ export const SCHEMA = {
     indexes: [["tid"]],
   },
   expenses: {
-    attrs: [["tid", "string", 32], ["day", "string", 10], ["amount", "float"], ["cat", "string", 16], ["note", "string", 300]],
+    attrs: [["tid", "string", 32], ["day", "string", 10], ["amount", "float"], ["cat", "string", 16], ["note", "string", 300], ["kind", "string", 8]],
     indexes: [["tid"], ["day"]],
   },
   measures: {

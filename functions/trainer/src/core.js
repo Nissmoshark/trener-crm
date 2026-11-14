@@ -12,6 +12,7 @@ const isPriv = (k) => KV_PRIVATE.some((x) => String(k).startsWith(x));
 const ADMIN_SETUP_HASH = "FiHtdyLO5HXp1XEg2o-wZfo4aAqOgvmOOhp0HmybZ7E";
 const BOT_CFG = "2"; // версія налаштувань бота (кнопки «Буду / Не зможу»)
 const EXP_CATS = ["rent", "gear", "transport", "education", "ads", "food", "other"];
+const INC_CATS = ["consult", "sale", "other"];
 export class ApiError extends Error {}
 export const LANDING_DEFAULT = {
   hero_title: "Журнал персонального тренера",
@@ -805,7 +806,8 @@ export function createCore(st, opts = {}) {
       const amount = round2(Number(e.amount));
       if (!(amount > 0)) throw new ApiError("Вкажіть суму");
       if (!isDay(e.day)) throw new ApiError("Вкажіть дату");
-      const vals = { day: e.day, amount, cat: EXP_CATS.includes(e.cat) ? e.cat : "other", note: e.note ? String(e.note).slice(0, 300) : null };
+      const kind = e.kind === "income" ? "income" : "expense";
+      const vals = { day: e.day, amount, kind, cat: (kind === "income" ? INC_CATS : EXP_CATS).includes(e.cat) ? e.cat : "other", note: e.note ? String(e.note).slice(0, 300) : null };
       return { expense: e.id ? await D.update("expenses", e.id, vals) : await D.create("expenses", vals, newId()) };
     },
     async expense_delete(b) { await D.remove("expenses", b.id); return {}; },

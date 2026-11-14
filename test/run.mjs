@@ -363,8 +363,13 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
   const ex = (await OK("expense_save", { expense: { day: "2026-11-09", amount: 3000, cat: "rent", note: "Оренда залу" } }, T)).expense;
   await OK("expense_save", { expense: { day: "2026-11-10", amount: 450.5, cat: "gear" } }, T);
   assert.equal((await OK("expenses_range", { from: "2026-11-01", to: "2026-11-30" }, T)).expenses.length, 2);
+  const inc = (await OK("expense_save", { expense: { day: "2026-11-11", amount: 800, cat: "sale", kind: "income", note: "Резинки" } }, T)).expense;
+  assert.equal(inc.kind, "income"); assert.equal(inc.cat, "sale");
+  assert.equal((await OK("expense_save", { expense: { day: "2026-11-11", amount: 100, cat: "rent", kind: "income" } }, T)).expense.cat, "other");
+  assert.equal((await OK("expenses_range", { from: "2026-11-01", to: "2026-11-30" }, T)).expenses.filter((e) => e.kind === "income").length, 2);
+  await OK("expense_delete", { id: inc.id }, T);
   await OK("expense_delete", { id: ex.id }, T);
-  assert.equal((await OK("expenses_range", { from: "2026-11-01", to: "2026-11-30" }, T)).expenses.length, 1);
+  assert.equal((await OK("expenses_range", { from: "2026-11-01", to: "2026-11-30" }, T)).expenses.length, 2);
   // заміри
   await BAD("measure_save", { measure: { client_id: cl.id, day: "2026-11-09" } }, T, /хоча б один/);
   await OK("measure_save", { measure: { client_id: cl.id, day: "2026-10-01", weight: 72.5, waist: 80 } }, T);

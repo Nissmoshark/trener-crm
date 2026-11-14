@@ -23,6 +23,7 @@
   const KIND = { personal: "Персональне", split: "Спліт", group: "Група" };
   const PAY = { paid: "Оплачено", debt: "Борг", package: "Абонемент" };
   const EXP = { rent: ["Оренда залу", "🏟"], gear: ["Інвентар", "🏋️"], transport: ["Транспорт", "🚕"], education: ["Навчання", "📚"], ads: ["Реклама", "📣"], food: ["Харчування", "🥗"], other: ["Інше", "🧾"] };
+  const INC = { consult: ["Консультації", "💬"], sale: ["Продаж", "🛒"], other: ["Інший дохід", "💰"] };
   const REPEAT = [[0, "не повторювати"], [4, "4 тижні"], [8, "8 тижнів"], [12, "12 тижнів"], [26, "півроку"]];
   const MEAS = [["weight", "Вага", "кг"], ["waist", "Талія", "см"], ["hips", "Стегна", "см"], ["chest", "Груди", "см"], ["fat", "Жир", "%"]];
   const parseProg = (x) => { try { const a = JSON.parse(x || "[]"); return Array.isArray(a) ? a : []; } catch { return []; } };
@@ -639,23 +640,25 @@
     const [from, to] = statsRange();
     const [j, ej] = await Promise.all([must("range", { from, to }), must("expenses_range", { from, to })]);
     const box = $("#sbox"); if (!box) return;
-    const exps = ej.expenses || [];
-    st.expenses = exps;
+    const allEx = ej.expenses || [];
+    st.expenses = allEx;
+    const exps = allEx.filter((e) => e.kind !== "income"), incs = allEx.filter((e) => e.kind === "income");
     const all = j.sessions, ok = all.filter((s) => s.status !== "cancelled");
-    const income = ok.reduce((a, s) => a + sessTotal(s), 0);
+    const sessIncome = ok.reduce((a, s) => a + sessTotal(s), 0);
+    const other = incs.reduce((a, e) => a + Number(e.amount), 0), income = sessIncome + other;
     const parts = ok.flatMap((s) => s.participants.map((p) => ({ ...p, s })));
     const clientsN = new Set(parts.map((p) => p.client_id)).size;
     const debt = parts.filter((p) => p.pay === "debt" && p.s.day <= today()).reduce((a, p) => a + Number(p.price), 0);
     const fromPkg = parts.filter((p) => p.pay === "package").reduce((a, p) => a + Number(p.price), 0);
     const cancelled = all.length - ok.length, noShow = all.filter((s) => s.status === "no_show").length;
     const moves = all.reduce((a, s) => a + (s.moves || []).length, 0);
-    const avg = ok.length ? income / ok.length : 0;
+    const avg = ok.length ? sessIncome / ok.length : 0;
     // по днях / місяцях
     let buckets = [];
     if (st.statsPeriod === "year") {
-      for (let m = 0; m < 12; m++) { const key = `${from.slice(0, 4)}-${pad(m + 1)}`; buckets.push({ l: MONN[m].slice(0, 3), v: ok.filter((s) => s.day.startsWith(key)).reduce((a, s) => a + sessTotal(s), 0) }); }
+      for (let m = 0; m < 12; m++) { const key = `${from.slice(0, 4)}-${pad(m + 1)}`; buckets.push({ l: MONN[m].slice(0, 3), v: ok.filter((s) => s.day.startsWith(key)).reduce((a, s) => a + sessTotal(s), 0) + incs.filter((e) => e.day.startsWith(key)).reduce((a, e) => a + Number(e.amount), 0) }); }
     } else {
-      for (let d = from; d <= to; d = addDays(d, 1)) buckets.push({ l: st.statsPeriod === "week" ? WD[D(d).getDay()] : String(D(d).getDate()), v: ok.filter((s) => s.day === d).reduce((a, s) => a + sessTotal(s), 0) });
+      for (let d = from; d <= to; d = addDays(d, 1)) buckets.push({ l: st.statsPeriod === "week" ? WD[D(d).getDay()] : String(D(d).getDate()), v: ok.filter((s) => s.day === d).reduce((a, s) => a + sessTotal(s), 0) + incs.filter((e) => e.day === d).reduce((a, e) => a + Number(e.amount), 0) });
     }
     const max = Math.max(1, ...buckets.map((b) => b.v));
     const byKind = ["personal", "split", "group"].map((k) => ({ k, v: ok.filter((s) => s.kind === k).reduce((a, s) => a + sessTotal(s), 0), n: ok.filter((s) => s.kind === k).length }));
@@ -678,8 +681,11 @@
       ${exps.length ? `<div class="legend">${byCat.map(([k, v]) => `<div><i style="background:var(--plate-red)"></i><span>${(EXP[k] || EXP.other)[1]} ${(EXP[k] || EXP.other)[0]}</span><b>${num(v)} грн</b></div>`).join("")}</div>
         <ul class="hist" style="margin-top:8px">${exps.slice(0, 30).map((e) => `<li><button class="mrow" data-act="editExpense" data-id="${e.id}"><span>${dShort(e.day)} · ${(EXP[e.cat] || EXP.other)[1]} ${esc(e.note || (EXP[e.cat] || EXP.other)[0])}</span><span class="p">−${num(e.amount)}</span></button></li>`).join("")}</ul>`
         : '<div class="none">Оренда залу, інвентар, дорога, курси — щоб бачити чистий прибуток.</div>'}</div>`;
+    const incHtml = `<div class="chart"><h3 class="row-h"><span>Інший дохід</span><button class="chip-btn sm" data-act="newIncome">+ Дохід</button></h3>
+      ${incs.length ? `<ul class="hist" style="margin-top:8px">${incs.slice(0, 30).map((e) => `<li><button class="mrow" data-act="editExpense" data-id="${e.id}"><span>${dShort(e.day)} · ${(INC[e.cat] || INC.other)[1]} ${esc(e.note || (INC[e.cat] || INC.other)[0])}</span><span class="p">+${num(e.amount)}</span></button></li>`).join("")}</ul>`
+        : '<div class="none">Продаж, консультації, будь-які надходження поза тренуваннями.</div>'}</div>`;
     box.innerHTML = `
-      <div class="total"><div><div class="sum">${num(income)}<span>грн</span></div></div><div class="meta">дохід<br><b>${ok.length}</b> трен. · <b>${clientsN}</b> клієнт.</div></div>
+      <div class="total"><div><div class="sum">${num(income)}<span>грн</span></div></div><div class="meta">дохід${other ? `<br>з них інший: <b>${num(other)}</b>` : ""}<br><b>${ok.length}</b> трен. · <b>${clientsN}</b> клієнт.</div></div>
       <div class="stats-grid two">
         <div class="stat"><b style="color:var(--plate-red)">${spent ? "−" + num(spent) : "0"}</b><span>витрати, грн</span></div>
         <div class="stat"><b style="${net < 0 ? "color:var(--plate-red)" : "color:var(--plate-green, #1e7d4f)"}">${num(net)}</b><span>чистий прибуток, грн</span></div>
@@ -698,23 +704,25 @@
         <div class="bars-x">${buckets.map((b, i) => `<span>${buckets.length > 14 && i % 5 && i !== buckets.length - 1 ? "" : b.l}</span>`).join("")}</div>
       </div>
       <div class="chart"><h3>За типом тренувань</h3>
-        <div class="split-bar">${byKind.filter((x) => x.v).map((x) => `<span style="width:${(x.v / Math.max(1, income)) * 100}%;background:${colors[x.k]}"></span>`).join("")}</div>
+        <div class="split-bar">${byKind.filter((x) => x.v).map((x) => `<span style="width:${(x.v / Math.max(1, sessIncome)) * 100}%;background:${colors[x.k]}"></span>`).join("")}</div>
         <div class="legend">${byKind.map((x) => `<div><i style="background:${colors[x.k]}"></i><span>${KIND[x.k]} · ${x.n}</span><b>${num(x.v)} грн</b></div>`).join("")}</div>
       </div>
       <div class="chart"><h3>Топ клієнтів</h3>${top.length ? `<ol class="top-list">${top.map((t) => `<li><span>${esc(t.name)} · ${t.n} трен.</span><b>${num(t.v)}</b></li>`).join("")}</ol>` : '<div style="color:var(--muted)">Немає даних за період</div>'}
         ${busyHours.length ? `<div style="margin-top:10px;font-size:14px;color:var(--muted)">Найзавантаженіший час: <b style="color:var(--ink)">${busyHours.join(", ")}</b></div>` : ""}
       </div>
-      ${expHtml}`;
+      ${expHtml}
+      ${incHtml}`;
   }
 
-  function expenseSheet(e) {
-    const x = e || { day: today(), amount: "", cat: "rent", note: "" };
-    openSheet(`<h2>${e ? "Витрата" : "Нова витрата"}<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
+  function expenseSheet(e, kind) {
+    const inc = e ? e.kind === "income" : kind === "income", CATS = inc ? INC : EXP;
+    const x = e || { day: today(), amount: "", cat: inc ? "other" : "rent", note: "" };
+    openSheet(`<h2>${inc ? (e ? "Інший дохід" : "Новий дохід") : e ? "Витрата" : "Нова витрата"}<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
       <div class="row2"><label class="field"><span>Сума, грн</span><input id="ex-amount" type="number" inputmode="decimal" value="${x.amount}" placeholder="0"></label>
         <label class="field"><span>Дата</span><input id="ex-day" type="date" value="${x.day}"></label></div>
-      <div class="cats" role="group" aria-label="Категорія">${Object.entries(EXP).map(([k, [l, ic]]) => `<button data-act="expCat" data-cat="${k}" aria-pressed="${x.cat === k}">${ic} ${l}</button>`).join("")}</div>
-      <label class="field"><span>Коментар</span><input id="ex-note" value="${esc(x.note || "")}" placeholder="Напр. оренда за листопад"></label>
-      <div class="foot"><button class="btn blue" data-act="saveExpense" data-id="${e ? e.id : ""}">Зберегти</button>${e ? `<button class="btn red" data-act="deleteExpense" data-id="${e.id}">Видалити</button>` : ""}</div>`, (bg) => { bg.dataset.cat = x.cat; if (!e) $("#ex-amount", bg).focus(); });
+      <div class="cats" role="group" aria-label="Категорія">${Object.entries(CATS).map(([k, [l, ic]]) => `<button data-act="expCat" data-cat="${k}" aria-pressed="${x.cat === k}">${ic} ${l}</button>`).join("")}</div>
+      <label class="field"><span>Коментар</span><input id="ex-note" value="${esc(x.note || "")}" placeholder="${inc ? "Напр. продаж резинок" : "Напр. оренда за листопад"}"></label>
+      <div class="foot"><button class="btn blue" data-act="saveExpense" data-id="${e ? e.id : ""}" data-kind="${inc ? "income" : "expense"}">Зберегти</button>${e ? `<button class="btn red" data-act="deleteExpense" data-id="${e.id}">Видалити</button>` : ""}</div>`, (bg) => { bg.dataset.cat = x.cat; if (!e) $("#ex-amount", bg).focus(); });
   }
 
   // ───── Ще / налаштування ─────
@@ -927,14 +935,15 @@
       closeSheet(); toast("Замір збережено"); render();
     },
     deleteMeasure(d) { askConfirm("Видалити цей замір?", "Видалити", async () => { await must("measure_delete", { id: +d.id }); closeSheet(); toast("Видалено"); render(); }); },
-    newExpense() { expenseSheet(null); },
+    newExpense() { expenseSheet(null, "expense"); },
+    newIncome() { expenseSheet(null, "income"); },
     editExpense(d) { const e = (st.expenses || []).find((x) => x.id === +d.id); if (e) expenseSheet(e); },
     expCat(d, el) { const bg = $("#sheet"); bg.dataset.cat = d.cat; bg.querySelectorAll("[data-act=expCat]").forEach((b) => b.setAttribute("aria-pressed", b === el)); },
     async saveExpense(d) {
-      await must("expense_save", { expense: { id: d.id ? +d.id : undefined, amount: $("#ex-amount").value.replace(",", "."), day: $("#ex-day").value, cat: $("#sheet").dataset.cat, note: $("#ex-note").value } });
-      closeSheet(); toast("Витрату збережено"); render();
+      await must("expense_save", { expense: { id: d.id ? +d.id : undefined, amount: $("#ex-amount").value.replace(",", "."), day: $("#ex-day").value, cat: $("#sheet").dataset.cat, kind: d.kind, note: $("#ex-note").value } });
+      closeSheet(); toast(d.kind === "income" ? "Дохід збережено" : "Витрату збережено"); render();
     },
-    deleteExpense(d) { askConfirm("Видалити витрату?", "Видалити", async () => { await must("expense_delete", { id: +d.id }); closeSheet(); toast("Видалено"); render(); }); },
+    deleteExpense(d) { askConfirm("Видалити запис?", "Видалити", async () => { await must("expense_delete", { id: +d.id }); closeSheet(); toast("Видалено"); render(); }); },
     goalSheet() {
       openSheet(`<h2>Ціль на місяць<button class="icon-btn" data-act="close" aria-label="Закрити">${ICON.close}</button></h2>
         <label class="field"><span>Скільки хочете заробляти за місяць, грн</span><input id="g-goal" type="number" inputmode="numeric" value="${st.settings.month_goal || ""}" placeholder="40000"></label>

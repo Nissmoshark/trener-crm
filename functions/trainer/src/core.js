@@ -1458,12 +1458,7 @@ export function createCore(st, opts = {}) {
       await send(s.trainer_chat_id, await daySummary(L.day));
       out.push("evening");
     }
-    // щонеділі ввечері — резервна копія в Telegram
-    const sunday = new Date(L.day + "T12:00:00Z").getUTCDay() === 0;
-    if (sunday && s.backup_weekly !== "0" && L.hm >= (s.digest_evening || "21:00") && s.last_backup_day !== L.day) {
-      await tSet("last_backup_day", L.day);
-      try { await sendBackup(); out.push("backup"); } catch (e) { await logError("backup", e); }
-    }
+    // автоматична копія тренеру в Telegram вимкнена (копії робляться на сервері окремо)
   }
 
   return { api, onUpdate, tick, settings, ensureBot, logError, setClock: (f) => { nowMs = f; }, swapStore: (x) => { st = x; }, normPhone, local, sleep };

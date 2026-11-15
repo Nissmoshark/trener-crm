@@ -462,7 +462,7 @@ await ok("settings_save", { settings: { trainer_name: "Олег К.", remind_bef
     for (const c of await st3.list("clients")) if (c.name === "Старий абонемент") await st3.remove("clients", c.id); }
   // щонеділі автоматично
   clk = Date.parse("2026-11-15T19:40:00Z"); // нд 21:40
-  t = await c3.tick(); assert.ok(t.includes("backup"), "weekly backup " + t);
+  t = await c3.tick(); assert.ok(!t.includes("backup"), "авто-копію вимкнено " + t);
   t = await c3.tick(); assert.ok(!t.includes("backup"));
   // адаптивний запас: часті запуски → нагадування не наперед
   clk = Date.parse("2026-11-16T05:00:00Z"); await c3.tick(); clk += 60000; // пн 07:01

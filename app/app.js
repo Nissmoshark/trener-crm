@@ -1028,11 +1028,18 @@
         <p style="margin:-4px 0 12px">${esc(c.name)} · ${esc(pkShortTitle(pk))} · ${pkgShort(pk)}</p>
         <div class="row2"><label class="field"><span>Дата</span><input type="date" id="u-day" value="${today()}"></label><label class="field"><span>Час</span><input type="time" id="u-time" value="${t}" step="300"></label></div>
         <label class="field"><span>Нотатка (необовʼязково)</span><input id="u-note" placeholder="Що робили"></label>
+        <p class="hint" style="margin:0 0 12px">Для тренувань, які вже є в розкладі, списувати нічого не треба: вони забирають місце в абонементі самі. Ця кнопка — лише для занять, яких у розкладі немає.</p>
         <div class="foot"><button class="btn blue" data-act="pkgUseOk">Списати 1 тренування</button></div>`);
     },
-    async pkgUseOk() {
+    async pkgUseOk(d, el, saved) {
       const c = clientById(st.clientId); if (!c) return;
-      await must("session_save", { session: { day: $("#u-day").value, start_time: $("#u-time").value || "12:00", duration_min: 60, kind: "personal", note: $("#u-note").value, online: !!c.online },
+      const v = saved || { day: $("#u-day").value, time: $("#u-time").value || "12:00", note: $("#u-note").value };
+      if (!saved) {
+        const hj = await must("client_history", { id: c.id });
+        const dup = (hj.history || []).filter((h) => h.day === v.day && h.status !== "cancelled");
+        if (dup.length) return askConfirm(`На ${dLong(v.day)} у клієнта вже є тренування${dup.length > 1 ? " (" + dup.length + ")" : ""}${dup[0].time ? " о " + dup[0].time : ""}. Воно вже враховане в абонементі. Списати ще одне?`, "Так, ще одне", () => handlers.pkgUseOk(d, el, v));
+      }
+      await must("session_save", { session: { day: v.day, start_time: v.time, duration_min: 60, kind: "personal", note: v.note, online: !!c.online },
         participants: [{ client_id: c.id, price: 0, pay: "package" }] });
       closeSheet(); toast("Списано 1 тренування"); await refreshBase(); render();
     },

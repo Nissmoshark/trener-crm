@@ -58,13 +58,24 @@
     let r;
     try {
       r = await fetch(API_URL, { method: "POST", headers: { "content-type": "application/json", ...(token ? { authorization: "Bearer " + token } : {}) }, body: JSON.stringify({ action, ...body, ...(token ? {} : { _app: location.origin + location.pathname }) }) });
-    } catch { return { ok: false, error: "Немає зʼєднання з сервером. Перевірте інтернет." }; }
+    } catch { return { ok: false, net: true, error: "Немає зʼєднання з сервером. Перевірте інтернет." }; }
     const j = await r.json().catch(() => ({ ok: false, error: "Помилка сервера" }));
     if (j.error === "auth") { token = ""; localStorage.removeItem("trainer-token"); showLogin(); }
     return j;
   }
+  // Немає мережі: вікно не зникає, доки користувач не повторить або не скасує — запис не губиться мовчки
+  function netRetry() {
+    return new Promise((resolve) => {
+      const o = document.createElement("div");
+      o.className = "net-lock"; o.setAttribute("role", "alertdialog");
+      o.innerHTML = '<div class="net-box"><h3>⚠️ Не збережено</h3><p>Немає зʼєднання з сервером. Запис ще НЕ збережений. Перевірте інтернет і повторіть.</p><button class="btn" data-r="1">Повторити</button><button class="btn light" data-r="0">Скасувати</button></div>';
+      o.addEventListener("click", (e) => { const b = e.target.closest("[data-r]"); if (!b) return; o.remove(); resolve(b.dataset.r === "1"); });
+      document.body.appendChild(o);
+    });
+  }
   async function must(action, body) {
-    const j = await call(action, body);
+    let j = await call(action, body);
+    while (!j.ok && j.net && !DEMO) { if (!(await netRetry())) break; j = await call(action, body); }
     if (!j.ok) {
       if (j.error !== "auth") toast(j.error || "Помилка", true);
       if (j.reason === "subscription" || j.reason === "pro") setTimeout(() => handlers.subSheet(), 600);

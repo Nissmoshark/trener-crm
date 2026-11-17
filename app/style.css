@@ -432,3 +432,6 @@ button, .sess, .wday, .mcell, .crow { -webkit-touch-callout: none; -webkit-user-
 .note .nt { display: block; font-weight: 600; }
 .note .nb { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin-top: 4px; color: var(--muted); font-size: 14px; white-space: pre-line; }
 .chk-row { display: flex; align-items: center; gap: 10px; margin: 8px 0 12px; font-size: 15px; }
+.net-lock { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,.55); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.net-box { background: var(--paper, #fff); color: var(--ink); border-radius: 16px; padding: 20px; max-width: 340px; width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.net-box h3, .net-box p { margin: 0; }
